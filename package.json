@@ -1,23 +1,27 @@
 {
-  "type": "module",
   "name": "sui_game",
   "version": "1.0.0",
-  "description": "",
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
+    "@mysten/sui": "^1.29.0",
     "@mysten/sui.js": "^0.54.1",
     "dotenv": "^16.5.0",
     "express": "^5.1.0"
   },
+  "exports": {
+    "./client": "./dist/esm/client/index.js",
+    "./faucet": "./dist/esm/faucet/index.js",
+    "./transactions": "./dist/esm/transactions/index.js",
+    "./providers": "./dist/esm/providers/json-rpc-provider.js",
+    "./utils": "./dist/esm/utils/index.js",
+    "./keypairs": "./dist/esm/keypairs/ed25519.js",
+    ".": "./dist/esm/index.js"
+  },
   "engines": {
-  "node": "18.x"
-}
-
+    "node": "18.x"
+  }
 }

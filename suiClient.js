@@ -1,15 +1,14 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519.js';
-import { RawSigner } from '@mysten/sui.js/dist/cjs/cryptography/raw-signer.js';
-import { JsonRpcProvider, Connection } from '@mysten/sui.js/dist/cjs/providers/json-rpc-provider.js';
+import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
+import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
-const keypair = Ed25519Keypair.deriveKeypair(process.env.SUI_MNEMONIC);
-const connection = new Connection({
-  fullnode: 'https://fullnode.testnet.sui.io',
-});
-const provider = new JsonRpcProvider(connection);
-const signer = new RawSigner(keypair, provider);
+const NETWORK  = 'testnet';
+const RPC_URL  = getFullnodeUrl(NETWORK);     // https://fullnode.testnet.sui.io
+export const client  = new SuiClient({ url: RPC_URL });
 
-export default signer;
+export const keypair = Ed25519Keypair.deriveKeypair(
+  process.env.SUI_MNEMONIC
+);
+export const address = keypair.getPublicKey().toSuiAddress();
