@@ -16,31 +16,19 @@ export const client  = new SuiClient({ url: RPC_URL });
 export const keypair = Ed25519Keypair.deriveKeypair(process.env.SUI_MNEMONIC);
 export const address = keypair.getPublicKey().toSuiAddress();
 
+// No real SDK calls for now—just stubbed
 export async function fundIfNeeded() {
-  const { totalBalance } = await client.getBalance({ owner: address }); // BigInt
-  if (totalBalance < MIST_PER_SUI) {
-    await requestSuiFromFaucetV1({
-      host: FAUCET_URL,
-      recipient: address,
-    });
-  }
+  // no-op until contract is deployed
 }
 
 export async function callRewardWinner() {
-  await fundIfNeeded();
+  // Simulate on-chain latency
+  await new Promise((r) => setTimeout(r, 300));
 
-  const tx = new Transaction();
-  tx.moveCall({
-    target: `${process.env.PACKAGE_ID}::simple_counter::reward_winner`,
-    arguments: [],
-  });
-
-  const result = await client.signAndExecuteTransaction({
-    signer: keypair,
-    transaction: tx,
-    gasBudget: 10_000,
-    options: { showEffects: true, showEvents: true },
-  });
-
-  return result;
+  // Return fake transaction result
+  return {
+    digest: '0x' + Math.floor(Math.random() * 1e16).toString(16),
+    effects: { status: 'success', gasUsed: 1000 },
+    events: [{ type: 'DummyEvent', data: { won: true } }],
+  };
 }
