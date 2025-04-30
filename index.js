@@ -50,3 +50,13 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`Testnet address: ${address}`);
 });
+
+app.get('/', (_, res) => {
+  res.send(`
+    <h1>SUI Game API</h1>
+    <ul>
+      <li><a href="/balance">/balance</a> – your Testnet balance</li>
+      <li><a href="/play" onclick="fetch('/play',{method:'POST'}).then(r=>r.json()).then(j=>alert(JSON.stringify(j)))">/play</a> – play the game</li>
+    </ul>
+  `);
+});
