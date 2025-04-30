@@ -1,63 +1,86 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>SUI Game</title>
+  <meta charset="UTF-8">
+  <title>SUI Wallet Connect Example</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2em;
+    }
+    button {
+      padding: 0.5em 1em;
+      font-size: 1em;
+      margin-right: 1em;
+    }
+    input {
+      padding: 0.5em;
+      width: 300px;
+      margin-right: 1em;
+    }
+  </style>
 </head>
 <body>
-  <h1>SUI Roll Game</h1>
+  <h1>SUI Wallet Connect + Mint Demo</h1>
 
-  <button id="play">Play!</button>
+  <button id="connectWallet">Connect Wallet</button>
+  <span id="walletAddress">Not connected</span>
+  <br/><br/>
 
-  <h2>Mint NFT</h2>
-  <label>
-    Image URL:
-    <input type="text" id="imageUrl" value="https://i.imgur.com/sFFNxAr.jpeg" style="width: 300px;" />
-  </label>
-  <br />
-  <button id="mint">Mint NFT</button>
+  <input type="text" id="imageUrl" placeholder="Enter NFT image URL here" />
+  <button id="mintNft">Mint NFT</button>
 
   <pre id="output"></pre>
 
   <script>
-    document.getElementById('play').onclick = async () => {
-      document.getElementById('output').textContent = 'Rolling…';
+    let connectedAddress = null;
+
+    document.getElementById('connectWallet').onclick = async () => {
+      const output = document.getElementById('output');
+      output.textContent = 'Connecting to wallet...';
+
       try {
-        console.log('🔄 Calling /play...');
-        const res = await fetch('/play', { method: 'POST' });
-        const json = await res.json();
-        console.log('✅ Response from /play:', json);
-        document.getElementById('output').textContent =
-          JSON.stringify(json, null, 2);
-      } catch (e) {
-        console.error('❌ Error during /play:', e);
-        document.getElementById('output').textContent = 'Error: ' + e;
+        if (!window.sui) {
+          output.textContent = 'SUI wallet not detected.';
+          return;
+        }
+
+        const accounts = await window.sui.request({ method: 'sui_connect' });
+        connectedAddress = accounts[0];
+        document.getElementById('walletAddress').textContent = connectedAddress;
+        output.textContent = 'Wallet connected: ' + connectedAddress;
+      } catch (err) {
+        output.textContent = 'Wallet connection failed: ' + err.message;
       }
     };
 
-    document.getElementById('mint').onclick = async () => {
+    document.getElementById('mintNft').onclick = async () => {
+      const output = document.getElementById('output');
       const imageUrl = document.getElementById('imageUrl').value;
-      document.getElementById('output').textContent = 'Minting NFT…';
-      console.log('🖼️ Minting with image URL:', imageUrl);
+
+      if (!connectedAddress) {
+        output.textContent = 'Please connect your wallet first.';
+        return;
+      }
+
+      if (!imageUrl.trim()) {
+        output.textContent = 'Please enter an image URL.';
+        return;
+      }
+
+      output.textContent = 'Minting NFT...';
 
       try {
         const res = await fetch('/mint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: 'My First NFT',
-            description: 'This is a test NFT from SUI',
-            imageUrl,
-            thumbnailUrl: imageUrl,
-          }),
+          body: JSON.stringify({ imageUrl })
         });
-        const json = await res.json();
-        console.log('✅ Response from /mint:', json);
-        document.getElementById('output').textContent =
-          JSON.stringify(json, null, 2);
+
+        const result = await res.json();
+        output.textContent = JSON.stringify(result, null, 2);
       } catch (e) {
-        console.error('❌ Error during /mint:', e);
-        document.getElementById('output').textContent = 'Error: ' + e;
+        output.textContent = 'Minting failed: ' + e.message;
       }
     };
   </script>

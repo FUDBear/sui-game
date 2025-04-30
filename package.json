@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@mysten/sui": "^1.29.0",
+    "@suiet/wallet-kit": "^0.3.7",
     "dotenv": "^16.5.0",
     "express": "^5.1.0"
   },
