@@ -1,5 +1,7 @@
 import dotenv from 'dotenv';
-import { Ed25519Keypair, RawSigner, Connection, JsonRpcProvider } from '@mysten/sui.js';
+import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
+import { RawSigner } from '@mysten/sui.js/signer';
+import { Connection, JsonRpcProvider } from '@mysten/sui.js/providers';
 
 dotenv.config();
 
