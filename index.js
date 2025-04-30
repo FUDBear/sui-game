@@ -15,14 +15,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// GET /balance → your Testnet balance (in SUI)
 app.get('/balance', async (_, res) => {
   try {
-    const { totalBalance } = await client.getBalance({ owner: address });
-    res.json({
-      address,
-      balanceSui: Number(totalBalance) / 1e9,
-    });
+    const { totalBalance } = await client.getBalance({ owner: address }); // BigInt
+    const balanceSui = Number(totalBalance) / 1e9;  // mist → SUI
+    res.json({ address, balanceSui });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
