@@ -32,3 +32,23 @@ export async function callRewardWinner() {
     events: [{ type: 'DummyEvent', data: { won: true } }],
   };
 }
+
+export async function mintNFT({ name, description, imageUrl, thumbnailUrl }) {
+  const tx = new Transaction();
+
+  tx.moveCall({
+    target: '0x3f318c66e0987eea240227e9104ebb13a54764765e5fe098132fcbf227b19eca::testnet_nft::mint_to_sender',
+    arguments: [
+      tx.pure.string(name),
+      tx.pure.string(description),
+      tx.pure.string(imageUrl),
+      tx.pure.string(thumbnailUrl),
+    ],
+  });
+
+  tx.setSender(address);
+  const { bytes, signature } = await tx.sign({ client, signer: keypair });
+
+  return await client.executeTransactionBlock({ transactionBlock: bytes, signature });
+}
+

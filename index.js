@@ -1,7 +1,7 @@
 // index.js
 import express from 'express';
 import dotenv from 'dotenv';
-import { client, address, fundIfNeeded, callRewardWinner } from './suiClient.js';
+import { client, address, mintNFT, callRewardWinner } from './suiClient.js';
 
 dotenv.config();
 
@@ -62,4 +62,26 @@ app.get('/', (_, res) => {
       <li><a href="/play" onclick="fetch('/play',{method:'POST'}).then(r=>r.json()).then(j=>alert(JSON.stringify(j)))">/play</a> – play the game</li>
     </ul>
   `);
+});
+
+app.post('/mint', async (req, res) => {
+  try {
+    const { name, description, imageUrl, thumbnailUrl } = req.body;
+
+    const result = await mintNFT({
+      name,
+      description,
+      imageUrl,
+      thumbnailUrl,
+    });
+
+    res.json({
+      success: true,
+      digest: result.digest,
+      objectChanges: result.objectChanges,
+    });
+  } catch (err) {
+    console.error('NFT minting failed:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
