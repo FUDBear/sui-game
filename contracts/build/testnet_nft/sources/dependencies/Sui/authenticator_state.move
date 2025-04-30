@@ -35,7 +35,7 @@ public struct AuthenticatorStateInner has store {
 
 #[allow(unused_field)]
 /// Must match the JWK struct in fastcrypto-zkp
-public struct JWK has copy, drop, store {
+public struct JWK has store, drop, copy {
     kty: String,
     e: String,
     n: String,
@@ -44,13 +44,13 @@ public struct JWK has copy, drop, store {
 
 #[allow(unused_field)]
 /// Must match the JwkId struct in fastcrypto-zkp
-public struct JwkId has copy, drop, store {
+public struct JwkId has store, drop, copy {
     iss: String,
     kid: String,
 }
 
 #[allow(unused_field)]
-public struct ActiveJwk has copy, drop, store {
+public struct ActiveJwk has store, drop, copy {
     jwk_id: JwkId,
     jwk: JWK,
     epoch: u64,
