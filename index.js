@@ -9,6 +9,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+app.use(express.static(path.join(__dirname, 'public')));
+
 // GET /balance → your Testnet balance (in SUI)
 app.get('/balance', async (_, res) => {
   try {
