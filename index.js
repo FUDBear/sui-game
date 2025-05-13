@@ -189,19 +189,36 @@ function playercast(castArray) {
 }
 
 app.post('/playercast', (req, res) => {
-  try {
-    const { cast } = req.body;
-    playercast(cast);
-    return res.json({ success: true, cast });
-  } catch (e) {
-    return res.status(400).json({ error: e.message });
+  const { playerId, cast } = req.body;
+  if (!playerId || !Array.isArray(cast)) {
+    return res.status(400).json({ error: 'playerId and cast[] required' });
   }
+  // prevent new cast if you haven’t claimed your last one
+  if (unclaimedCatches.some(c => c.playerId === playerId)) {
+    return res
+      .status(400)
+      .json({ error: 'Claim your previous catch before casting again.' });
+  }
+  // validate cast ints…
+  playerCasts.push({ playerId, cast, timestamp: new Date().toISOString() });
+  res.json({ success: true });
 });
 
-// GET /playercasts → returns the full array
-app.get('/playercasts', (req, res) => {
-  res.json(playerCasts);
+app.post('/claim', (req, res) => {
+  const { playerId } = req.body;
+  if (!playerId) return res.status(400).json({ error: 'playerId required' });
+  const idx = unclaimedCatches.findIndex(c => c.playerId === playerId);
+  if (idx < 0) return res.status(404).json({ error: 'No unclaimed catch' });
+  const [claimed] = unclaimedCatches.splice(idx, 1);
+  res.json({ success: true, claimed });
 });
+
+
+
+// GET /playercasts → returns the full array
+app.get('/playercasts', (req, res) => { res.json(playerCasts);});
+app.get('/unclaimed', (_, res) => res.json(unclaimedCatches));
+app.get('/history',   (_, res) => res.json(catchHistory));
 
 // ─── at top of your file, alongside other in‐memory stores ───
 const phases = ['dawn', 'day', 'dusk', 'night'];
@@ -213,6 +230,10 @@ const events = {
   13: 'frozen',
 };
 const playerCatches = [];
+const unclaimedCatches = [];
+const catchHistory = [];
+let lastPhase = phases[currentPhaseIndex];
+let lastEvent = null;
 
 /**
  * Main game loop. Every interval:
@@ -222,76 +243,81 @@ const playerCatches = [];
  *  - Clears playerCasts so players can cast again
  */
 async function gameLoop() {
-  // 0) Grab & clear pending casts before processing
+  // 0) pull & clear casts
   const castsToProcess = [...playerCasts];
   playerCasts.length = 0;
 
-  // 1) Phase advance
-  const prevPhase = phases[currentPhaseIndex];
+  // 1) advance phase
+  const prev = phases[currentPhaseIndex];
   currentPhaseIndex = (currentPhaseIndex + 1) % phases.length;
   const phase = phases[currentPhaseIndex];
-  console.log(`🕰️ Phase change: ${prevPhase} → ${phase}`);
+  lastPhase = phase;
+  console.log(`🕰️ ${prev} → ${phase}`);
 
-  // 2) Tally votes for any event‐triggering casts
+  // 2) tally & pick event
   const voteCounts = {};
   for (const { cast } of castsToProcess) {
-    const trigger = cast.find(n => events[n]);
-    if (trigger != null) {
-      const name = events[trigger];
-      voteCounts[name] = (voteCounts[name] || 0) + 1;
-    }
+    const t = cast.find(n => events[n]);
+    if (t != null) voteCounts[events[t]] = (voteCounts[events[t]] || 0) + 1;
   }
-
-  // 3) Choose the winning event (or null)
   let chosenEvent = null;
   const entries = Object.entries(voteCounts);
   if (entries.length) {
-    // find max vote count
-    const maxVotes = Math.max(...entries.map(([,count])=>count));
-    // filter to events with that count
-    const topEvents = entries
-      .filter(([,count]) => count === maxVotes)
-      .map(([name]) => name);
-    // if tie, pick randomly
-    chosenEvent = topEvents[Math.floor(Math.random() * topEvents.length)];
+    const max = Math.max(...entries.map(([,c])=>c));
+    const top = entries.filter(([,c])=>c===max).map(([e])=>e);
+    chosenEvent = top[Math.floor(Math.random()*top.length)];
   }
-  console.log('🎯 Event votes:', voteCounts, '→ chosen:', chosenEvent);
+  lastEvent = chosenEvent;
+  console.log('🎯 votes', voteCounts, '→', chosenEvent);
+  
 
-  // 4) Reload fish data for catches
+  // 3) catch fish & record with phase/event
   await fishDb.read();
   const fishEntries = Object.entries(fishDb.data.fish);
-  if (!fishEntries.length) {
-    console.log('🎣 No fish to catch this turn');
-  }
-
-  // 5) Process each cast into a catch
-  for (const { cast } of castsToProcess) {
+  for (const { playerId, cast } of castsToProcess) {
     // pick a random fish
-    const [type, stats] =
+    const [ type, stats ] =
       fishEntries[Math.floor(Math.random() * fishEntries.length)];
 
-    playerCatches.push({
+    // build the single catch object
+    const catchRecord = {
+      playerId,                     // if you’re tracking which player caught it
       cast,
       catch: { type, stats },
-      event: chosenEvent,          // same event for everybody this turn
-      phase,
+      event: lastEvent,
+      phase: lastPhase,
       at: new Date().toISOString(),
-    });
+    };
+
+    // store it for claiming
+    unclaimedCatches.push(catchRecord);
+    // store it in the permanent history
+    catchHistory.push(catchRecord);
 
     console.log(
-      `🎣 [${cast.join(',')}] → ${type}` +
-      (chosenEvent ? ` + event "${chosenEvent}"` : '')
+      `🎣 cast [${cast.join(',')}] → ${type}` +
+      (chosenEvent ? ` (+${chosenEvent})` : '')
     );
   }
 
-  console.log(`✅ gameLoop complete (phase: ${phase})\n`);
+  // 4) done
+  console.log(`✅ loop done (phase: ${phase})\n`);
 }
 
-// kick it off & schedule every 30s
+
 gameLoop();
 setInterval(gameLoop, 30_000);
 
 // (Optional) expose an endpoint to inspect past catches:
 app.get('/catches', (req, res) => {
   res.json(playerCatches);
+});
+
+// ─── State endpoint ───
+app.get('/state', (req, res) => {
+  res.json({
+    phase: lastPhase,
+    event: lastEvent,
+    catches: playerCatches,
+  });
 });

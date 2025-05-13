@@ -2,250 +2,156 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Player List & Add Dummy</title>
+  <title>SUI Game Dashboard</title>
   <style>
     body { font-family: sans-serif; padding: 1rem; }
+    h1, h2, h3 { margin-bottom: 0.5rem; }
     button { margin: 0.5rem 0; }
-    ul { padding-left: 1.2rem; }
+    ul { padding-left: 1.2rem; margin-bottom: 1rem; }
+    #game-state { background: #73cbf1; padding: 1rem; margin-top: 2rem; border-radius: 8px; }
   </style>
 </head>
 <body>
-  <h1>Players</h1>
+  <h1>SUI Game Dashboard</h1>
 
-  <button id="btn-load">Load Players</button>
-  <button id="btn-add">Add Dummy Player</button>
-
-  <h2>Lookup Player</h2>
-  <input
-    type="text"
-    id="playerIdInput"
-    placeholder="Enter player ID, e.g. player_1747155912403"
-    style="width: 300px;"
-  />
-  <button id="btn-lookup">Lookup Player</button>
-  <pre id="lookupResult" style="background:#eef; padding:1rem; max-height:200px; overflow:auto;">
-    Player data will appear here…
-  </pre>
-
-
+  <button id="btn-load-players">Reload Players</button>
   <ul id="players"></ul>
 
-  <h2>Fish Catalog</h2>
-  <button id="btn-load-fish">Load All Fish</button>
-  <ul id="fish-list"></ul>
+  <button id="btn-add-player">Add Dummy Player</button>
 
-  <h3>Lookup Fish</h3>
-  <input type="text" id="fishTypeInput" placeholder="e.g. salmon" />
-  <button id="btn-lookup-fish">Lookup Fish</button>
-  <pre id="fish-lookup-out"></pre>
-
-    <!-- Player Cast Section -->
-    <h2>Player Cast</h2>
-    <input
-      type="text"
-      id="castInput"
-      placeholder="Enter numbers comma-separated, e.g. 5,3,9,1"
-      style="width: 250px;"
-    />
+  <h2>Player Cast</h2>
+  <div>
+    <label for="cast-player-id">Player ID:</label>
+    <input type="text" id="cast-player-id" placeholder="player_..." style="width:200px; margin:0 .5rem;">
+    <input type="text" id="cast-input" placeholder="e.g. 5,3,9,1" style="width:200px;">
     <button id="btn-cast">Submit Cast</button>
-    <button id="btn-load-casts">Load All Casts</button>
-    <ul id="castList"></ul>
+    <button id="btn-claim">Claim Catch</button>
+  </div>
 
-    <!-- Catches Section -->
-    <h2>Recent Catches</h2>
-    <button id="btn-load-catches">Load Catches</button>
-    <ul id="catchList"></ul>
+  <!-- Game State Panel -->
+  <div id="game-state">
+    <h2>Game State</h2>
+    <div>Phase: <strong><span id="state-phase">–</span></strong></div>
+    <div>Event: <strong><span id="state-event">–</span></strong></div>
 
+    <h3>Players</h3>
+    <ul id="state-players"></ul>
+
+    <h3>Pending Casts</h3>
+    <ul id="state-playercasts"></ul>
+
+    <h3>Unclaimed Catches</h3>
+    <ul id="state-unclaimed"></ul>
+
+    <h3>Catch History</h3>
+    <ul id="state-history"></ul>
+  </div>
 
   <script>
-    // Fetch & display all players
+    // — Utilities —
+    async function getJSON(path) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(res.statusText);
+      return res.json();
+    }
+
+    // — Players UI —
     async function loadPlayers() {
       const ul = document.getElementById('players');
-      ul.innerHTML = 'Loading…';
+      ul.textContent = 'Loading…';
       try {
-        const res = await fetch('/players');
-        if (!res.ok) throw new Error(res.statusText);
-        const players = await res.json();  // { id1: {wins,plays}, id2: {...}, … }
-        ul.innerHTML = ''; 
-        for (const [id, data] of Object.entries(players)) {
-          const li = document.createElement('li');
-          li.textContent = `${id} → wins: ${data.wins}, plays: ${data.plays}`;
-          ul.appendChild(li);
-        }
-        if (Object.keys(players).length === 0) {
-          ul.innerHTML = '<li><em>(no players yet)</em></li>';
-        }
+        const players = await getJSON('/players');
+        ul.innerHTML = Object.entries(players)
+          .map(([id, st]) => `<li>${id}: wins=${st.wins}, plays=${st.plays}</li>`)
+          .join('') || '<li><em>(no players)</em></li>';
       } catch (e) {
-        ul.innerHTML = `<li style="color:red">Error: ${e.message}</li>`;
+        ul.innerHTML = `<li style="color:red">${e.message}</li>`;
       }
     }
 
-    // Create a dummy player with random stats
     async function addDummyPlayer() {
       const id = 'player_' + Date.now();
-      const wins = Math.floor(Math.random() * 10);
-      const plays = Math.floor(Math.random() * 20);
-      try {
-        const res = await fetch(`/player/${encodeURIComponent(id)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ wins, plays })
-        });
-        if (!res.ok) throw new Error(res.statusText);
-        await res.json();  // ignore response body
-        loadPlayers();     // refresh list
-      } catch (e) {
-        alert('Failed to add player: ' + e.message);
-      }
+      const wins = Math.floor(Math.random()*10), plays = Math.floor(Math.random()*20);
+      await fetch(`/player/${id}`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ wins, plays })
+      });
+      loadPlayers();
+      refreshState();
     }
 
-    async function lookupPlayer() {
-      const out = document.getElementById('lookupResult');
-      const id = document.getElementById('playerIdInput').value.trim();
-      if (!id) {
-        out.textContent = '⚠️ Please enter a player ID.';
-        return;
-      }
-      out.textContent = '…fetching…';
-      try {
-        const res = await fetch(`/player/${encodeURIComponent(id)}`);
-        if (!res.ok) {
-          if (res.status === 404) {
-            out.textContent = `No player found with id "${id}"`;
-          } else {
-            throw new Error(res.statusText);
-          }
-          return;
-        }
-        const json = await res.json();
-        out.textContent = JSON.stringify(json, null, 2);
-      } catch (e) {
-        out.textContent = 'Error: ' + e.message;
-      }
-    }
-
-    async function loadFish() {
-      const ul = document.getElementById('fish-list')
-      ul.innerHTML = '…loading fish…'
-      try {
-        const fish = await fetch('/fish').then(r=>r.json())
-        ul.innerHTML = Object.entries(fish)
-          .map(([type,s])=>`<li>${type}: ${JSON.stringify(s)}</li>`)
-          .join('') || '<li>(no fish)</li>'
-      } catch (e) {
-        ul.innerHTML = `<li style="color:red">${e.message}</li>`
-      }
-    }
-
-    async function lookupFish() {
-      const out = document.getElementById('fish-lookup-out')
-      const type = document.getElementById('fishTypeInput').value.trim()
-      if (!type) return out.textContent = 'Enter a fish type'
-      out.textContent = '…looking up…'
-      try {
-        const res = await fetch(`/fish/${encodeURIComponent(type)}`)
-        if (!res.ok) return out.textContent = `No fish called "${type}"`
-        const json = await res.json()
-        out.textContent = JSON.stringify(json, null, 2)
-      } catch (e) {
-        out.textContent = 'Error: ' + e.message
-      }
-    }
-
-    // Player Cast Section
+    // — Casting & Claiming —
     async function submitCast() {
-      const raw = document.getElementById('castInput').value;
-      const arr = raw
-        .split(',')
-        .map(s => parseInt(s.trim(), 10))
-        .filter(n => Number.isInteger(n));
-      if (arr.length === 0) {
-        return alert('Please enter at least one valid integer.');
-      }
+      const playerId = document.getElementById('cast-player-id').value.trim();
+      const raw = document.getElementById('cast-input').value;
+      const cast = raw.split(',').map(n=>parseInt(n,10)).filter(n=>Number.isInteger(n));
+      if (!playerId || cast.length===0) return alert('Need ID + valid ints');
+      const resp = await fetch('/playercast', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ playerId, cast })
+      });
+      const j = await resp.json();
+      if (!j.success) return alert('Error: '+j.error);
+      loadPlayers(); refreshState();
+    }
+    async function claimCatch() {
+      const playerId = document.getElementById('cast-player-id').value.trim();
+      if (!playerId) return alert('Enter Player ID');
+      const resp = await fetch('/claim', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ playerId })
+      });
+      const j = await resp.json();
+      if (!j.success) return alert('Error: '+j.error);
+      alert('Claimed: '+JSON.stringify(j.claimed));
+      refreshState();
+    }
+
+    // — Game State Panel —
+    async function refreshState() {
       try {
-        const res = await fetch('/playercast', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cast: arr })
-        });
-        const json = await res.json();
-        if (json.success) {
-          alert('Cast submitted!');
-          loadCasts();
-        } else {
-          alert('Error: ' + json.error);
-        }
+        // phase & event
+        const { phase, event } = await getJSON('/state');
+        document.getElementById('state-phase').textContent = phase;
+        document.getElementById('state-event').textContent = event||'None';
+
+        // players
+        const players = await getJSON('/players');
+        document.getElementById('state-players').innerHTML = Object.entries(players)
+          .map(([id,st])=>`<li>${id}: wins=${st.wins}, plays=${st.plays}</li>`).join('') || '<li>(none)</li>';
+
+        // pending casts
+        const casts = await getJSON('/playercasts');
+        document.getElementById('state-playercasts').innerHTML = casts
+          .map(c=>`<li>${c.playerId}: [${c.cast.join(', ')}] @${new Date(c.timestamp).toLocaleTimeString()}</li>`)
+          .join('') || '<li>(none)</li>';
+
+        // unclaimed
+        const unclaimed = await getJSON('/unclaimed');
+        document.getElementById('state-unclaimed').innerHTML = unclaimed
+          .map(c=>`<li>${c.playerId}: ${c.catch.type} @${new Date(c.at).toLocaleTimeString()}</li>`)
+          .join('') || '<li>(none)</li>';
+
+        // history
+        const history = await getJSON('/history');
+        document.getElementById('state-history').innerHTML = history
+          .map((c,i)=>`<li>#${i+1} ${c.playerId}: ${c.catch.type} (${c.event||'none'}) @${new Date(c.at).toLocaleTimeString()}</li>`)
+          .join('') || '<li>(none)</li>';
       } catch (e) {
-        alert('Request failed: ' + e.message);
+        console.error('refreshState error', e);
       }
     }
 
-    // GET all submitted casts from /playercasts
-    async function loadCasts() {
-      const ul = document.getElementById('castList');
-      ul.innerHTML = 'Loading…';
-      try {
-        const res = await fetch('/playercasts');
-        const data = await res.json();
-        if (data.length === 0) {
-          ul.innerHTML = '<li><em>(no casts yet)</em></li>';
-        } else {
-          ul.innerHTML = data
-            .map(
-              (c, i) =>
-                `<li>#${i + 1}: [${c.cast.join(', ')}] at ${new Date(
-                  c.timestamp
-                ).toLocaleTimeString()}</li>`
-            )
-            .join('');
-        }
-      } catch (e) {
-        ul.innerHTML = `<li style="color:red">Error: ${e.message}</li>`;
-      }
-    }
+    // — Event wiring & initial load —
+    document.getElementById('btn-load-players').onclick = loadPlayers;
+    document.getElementById('btn-add-player').onclick  = addDummyPlayer;
+    document.getElementById('btn-cast').onclick        = submitCast;
+    document.getElementById('btn-claim').onclick       = claimCatch;
 
-    // Fetch and display all catches
-    async function loadCatches() {
-      const ul = document.getElementById('catchList');
-      ul.innerHTML = 'Loading…';
-      try {
-        const res = await fetch('/catches');
-        if (!res.ok) throw new Error(res.statusText);
-        const data = await res.json(); // [ { cast, catch, at }, … ]
-        if (data.length === 0) {
-          ul.innerHTML = '<li><em>(no catches yet)</em></li>';
-        } else {
-          ul.innerHTML = data
-            .map((entry, i) => {
-              const castStr  = '[' + entry.cast.join(', ') + ']';
-              const fishType = entry.catch.type;
-              const time     = new Date(entry.at).toLocaleTimeString();
-              return `<li>#${i + 1}: cast ${castStr} → caught <strong>${fishType}</strong> at ${time}</li>`;
-            })
-            .join('');
-        }
-      } catch (e) {
-        ul.innerHTML = `<li style="color:red">Error: ${e.message}</li>`;
-      }
-    }
-
-    document.getElementById('btn-load').addEventListener('click', loadPlayers);
-    document.getElementById('btn-add').addEventListener('click', addDummyPlayer);
-    document.getElementById('btn-lookup').addEventListener('click', lookupPlayer);
-
-    document.getElementById('btn-load-fish').onclick   = loadFish
-    document.getElementById('btn-lookup-fish').onclick = lookupFish
-    window.addEventListener('DOMContentLoaded', loadFish)
-
-    document.getElementById('btn-cast').addEventListener('click', submitCast);
-    document.getElementById('btn-load-casts').addEventListener('click', loadCasts);
-    window.addEventListener('DOMContentLoaded', loadCasts);
-
-    document.getElementById('btn-load-catches').addEventListener('click', loadCatches);
-    window.addEventListener('DOMContentLoaded', loadCatches);
-
-    // initial load
-    window.addEventListener('DOMContentLoaded', loadPlayers);
+    loadPlayers();
+    refreshState();
+    setInterval(refreshState, 5000);
   </script>
 </body>
 </html>

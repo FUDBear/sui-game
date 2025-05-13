@@ -1,8 +1,249 @@
 {
   "fish": {
-    "salmon":    { "speed": 8,  "weight": 10, "rarity": "common" },
-    "tuna":      { "speed": 12, "weight": 25, "rarity": "uncommon" },
-    "marlin":    { "speed": 20, "weight": 200,"rarity": "rare" },
-    "angler":    { "speed": 2,  "weight": 1,  "rarity": "legendary" }
+    "Murkgill": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": [
+        {
+          "event": "blood",
+          "image": "-"
+        },
+        {
+          "event": "nightmare",
+          "image": "-"
+        },
+        {
+          "event": "toxic",
+          "image": "-"
+        },
+        {
+          "event": "frozen",
+          "image": "-"
+        }
+      ]
+    },
+    "Stonefin Gulper": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Tidehunter": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Hollowmaw Pike": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Flounder": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Abysal Eel": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Bitterfin": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Bonehook Lantern": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Dawn Angler": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Trout": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Spinegore Trout": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Old Boots": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Tin Cans": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Hooked Weeds": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Cola Can": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Drift Wood": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Broken Lure": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Plank": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    },
+    "Empty Bottle": {
+      "strength": 8,
+      "min-depth": 10,
+      "max-depth": 20,
+      "min-weight": 10,
+      "max-weight": 20,
+      "min-length": 10,
+      "max-length": 20,
+      "rarity": "common",
+      "base-image": "-",
+      "event-variations": []
+    }
   }
 }
