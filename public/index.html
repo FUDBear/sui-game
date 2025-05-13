@@ -1,88 +1,251 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>SUI Wallet Connect Example</title>
+  <meta charset="UTF-8" />
+  <title>Player List & Add Dummy</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 2em;
-    }
-    button {
-      padding: 0.5em 1em;
-      font-size: 1em;
-      margin-right: 1em;
-    }
-    input {
-      padding: 0.5em;
-      width: 300px;
-      margin-right: 1em;
-    }
+    body { font-family: sans-serif; padding: 1rem; }
+    button { margin: 0.5rem 0; }
+    ul { padding-left: 1.2rem; }
   </style>
 </head>
 <body>
-  <h1>SUI Wallet Connect + Mint Demo</h1>
+  <h1>Players</h1>
 
-  <button id="connectWallet">Connect Wallet</button>
-  <span id="walletAddress">Not connected</span>
-  <br/><br/>
+  <button id="btn-load">Load Players</button>
+  <button id="btn-add">Add Dummy Player</button>
 
-  <input type="text" id="imageUrl" placeholder="Enter NFT image URL here" />
-  <button id="mintNft">Mint NFT</button>
+  <h2>Lookup Player</h2>
+  <input
+    type="text"
+    id="playerIdInput"
+    placeholder="Enter player ID, e.g. player_1747155912403"
+    style="width: 300px;"
+  />
+  <button id="btn-lookup">Lookup Player</button>
+  <pre id="lookupResult" style="background:#eef; padding:1rem; max-height:200px; overflow:auto;">
+    Player data will appear here…
+  </pre>
 
-  <pre id="output"></pre>
+
+  <ul id="players"></ul>
+
+  <h2>Fish Catalog</h2>
+  <button id="btn-load-fish">Load All Fish</button>
+  <ul id="fish-list"></ul>
+
+  <h3>Lookup Fish</h3>
+  <input type="text" id="fishTypeInput" placeholder="e.g. salmon" />
+  <button id="btn-lookup-fish">Lookup Fish</button>
+  <pre id="fish-lookup-out"></pre>
+
+    <!-- Player Cast Section -->
+    <h2>Player Cast</h2>
+    <input
+      type="text"
+      id="castInput"
+      placeholder="Enter numbers comma-separated, e.g. 5,3,9,1"
+      style="width: 250px;"
+    />
+    <button id="btn-cast">Submit Cast</button>
+    <button id="btn-load-casts">Load All Casts</button>
+    <ul id="castList"></ul>
+
+    <!-- Catches Section -->
+    <h2>Recent Catches</h2>
+    <button id="btn-load-catches">Load Catches</button>
+    <ul id="catchList"></ul>
+
 
   <script>
-    let connectedAddress = null;
-
-    document.getElementById('connectWallet').onclick = async () => {
-      const output = document.getElementById('output');
-      output.textContent = 'Connecting to wallet...';
-
+    // Fetch & display all players
+    async function loadPlayers() {
+      const ul = document.getElementById('players');
+      ul.innerHTML = 'Loading…';
       try {
-        if (!window.sui) {
-          output.textContent = 'SUI wallet not detected.';
-          return;
+        const res = await fetch('/players');
+        if (!res.ok) throw new Error(res.statusText);
+        const players = await res.json();  // { id1: {wins,plays}, id2: {...}, … }
+        ul.innerHTML = ''; 
+        for (const [id, data] of Object.entries(players)) {
+          const li = document.createElement('li');
+          li.textContent = `${id} → wins: ${data.wins}, plays: ${data.plays}`;
+          ul.appendChild(li);
         }
-
-        const accounts = await window.sui.request({ method: 'sui_connect' });
-        connectedAddress = accounts[0];
-        document.getElementById('walletAddress').textContent = connectedAddress;
-        output.textContent = 'Wallet connected: ' + connectedAddress;
-      } catch (err) {
-        output.textContent = 'Wallet connection failed: ' + err.message;
+        if (Object.keys(players).length === 0) {
+          ul.innerHTML = '<li><em>(no players yet)</em></li>';
+        }
+      } catch (e) {
+        ul.innerHTML = `<li style="color:red">Error: ${e.message}</li>`;
       }
-    };
+    }
 
-    document.getElementById('mintNft').onclick = async () => {
-      const output = document.getElementById('output');
-      const imageUrl = document.getElementById('imageUrl').value;
-
-      if (!connectedAddress) {
-        output.textContent = 'Please connect your wallet first.';
-        return;
-      }
-
-      if (!imageUrl.trim()) {
-        output.textContent = 'Please enter an image URL.';
-        return;
-      }
-
-      output.textContent = 'Minting NFT...';
-
+    // Create a dummy player with random stats
+    async function addDummyPlayer() {
+      const id = 'player_' + Date.now();
+      const wins = Math.floor(Math.random() * 10);
+      const plays = Math.floor(Math.random() * 20);
       try {
-        const res = await fetch('/mint', {
+        const res = await fetch(`/player/${encodeURIComponent(id)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageUrl })
+          body: JSON.stringify({ wins, plays })
         });
-
-        const result = await res.json();
-        output.textContent = JSON.stringify(result, null, 2);
+        if (!res.ok) throw new Error(res.statusText);
+        await res.json();  // ignore response body
+        loadPlayers();     // refresh list
       } catch (e) {
-        output.textContent = 'Minting failed: ' + e.message;
+        alert('Failed to add player: ' + e.message);
       }
-    };
+    }
+
+    async function lookupPlayer() {
+      const out = document.getElementById('lookupResult');
+      const id = document.getElementById('playerIdInput').value.trim();
+      if (!id) {
+        out.textContent = '⚠️ Please enter a player ID.';
+        return;
+      }
+      out.textContent = '…fetching…';
+      try {
+        const res = await fetch(`/player/${encodeURIComponent(id)}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            out.textContent = `No player found with id "${id}"`;
+          } else {
+            throw new Error(res.statusText);
+          }
+          return;
+        }
+        const json = await res.json();
+        out.textContent = JSON.stringify(json, null, 2);
+      } catch (e) {
+        out.textContent = 'Error: ' + e.message;
+      }
+    }
+
+    async function loadFish() {
+      const ul = document.getElementById('fish-list')
+      ul.innerHTML = '…loading fish…'
+      try {
+        const fish = await fetch('/fish').then(r=>r.json())
+        ul.innerHTML = Object.entries(fish)
+          .map(([type,s])=>`<li>${type}: ${JSON.stringify(s)}</li>`)
+          .join('') || '<li>(no fish)</li>'
+      } catch (e) {
+        ul.innerHTML = `<li style="color:red">${e.message}</li>`
+      }
+    }
+
+    async function lookupFish() {
+      const out = document.getElementById('fish-lookup-out')
+      const type = document.getElementById('fishTypeInput').value.trim()
+      if (!type) return out.textContent = 'Enter a fish type'
+      out.textContent = '…looking up…'
+      try {
+        const res = await fetch(`/fish/${encodeURIComponent(type)}`)
+        if (!res.ok) return out.textContent = `No fish called "${type}"`
+        const json = await res.json()
+        out.textContent = JSON.stringify(json, null, 2)
+      } catch (e) {
+        out.textContent = 'Error: ' + e.message
+      }
+    }
+
+    // Player Cast Section
+    async function submitCast() {
+      const raw = document.getElementById('castInput').value;
+      const arr = raw
+        .split(',')
+        .map(s => parseInt(s.trim(), 10))
+        .filter(n => Number.isInteger(n));
+      if (arr.length === 0) {
+        return alert('Please enter at least one valid integer.');
+      }
+      try {
+        const res = await fetch('/playercast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cast: arr })
+        });
+        const json = await res.json();
+        if (json.success) {
+          alert('Cast submitted!');
+          loadCasts();
+        } else {
+          alert('Error: ' + json.error);
+        }
+      } catch (e) {
+        alert('Request failed: ' + e.message);
+      }
+    }
+
+    // GET all submitted casts from /playercasts
+    async function loadCasts() {
+      const ul = document.getElementById('castList');
+      ul.innerHTML = 'Loading…';
+      try {
+        const res = await fetch('/playercasts');
+        const data = await res.json();
+        if (data.length === 0) {
+          ul.innerHTML = '<li><em>(no casts yet)</em></li>';
+        } else {
+          ul.innerHTML = data
+            .map(
+              (c, i) =>
+                `<li>#${i + 1}: [${c.cast.join(', ')}] at ${new Date(
+                  c.timestamp
+                ).toLocaleTimeString()}</li>`
+            )
+            .join('');
+        }
+      } catch (e) {
+        ul.innerHTML = `<li style="color:red">Error: ${e.message}</li>`;
+      }
+    }
+
+    // Fetch and display all catches
+    async function loadCatches() {
+      const ul = document.getElementById('catchList');
+      ul.innerHTML = 'Loading…';
+      try {
+        const res = await fetch('/catches');
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json(); // [ { cast, catch, at }, … ]
+        if (data.length === 0) {
+          ul.innerHTML = '<li><em>(no catches yet)</em></li>';
+        } else {
+          ul.innerHTML = data
+            .map((entry, i) => {
+              const castStr  = '[' + entry.cast.join(', ') + ']';
+              const fishType = entry.catch.type;
+              const time     = new Date(entry.at).toLocaleTimeString();
+              return `<li>#${i + 1}: cast ${castStr} → caught <strong>${fishType}</strong> at ${time}</li>`;
+            })
+            .join('');
+        }
+      } catch (e) {
+        ul.innerHTML = `<li style="color:red">Error: ${e.message}</li>`;
+      }
+    }
+
+    document.getElementById('btn-load').addEventListener('click', loadPlayers);
+    document.getElementById('btn-add').addEventListener('click', addDummyPlayer);
+    document.getElementById('btn-lookup').addEventListener('click', lookupPlayer);
+
+    document.getElementById('btn-load-fish').onclick   = loadFish
+    document.getElementById('btn-lookup-fish').onclick = lookupFish
+    window.addEventListener('DOMContentLoaded', loadFish)
+
+    document.getElementById('btn-cast').addEventListener('click', submitCast);
+    document.getElementById('btn-load-casts').addEventListener('click', loadCasts);
+    window.addEventListener('DOMContentLoaded', loadCasts);
+
+    document.getElementById('btn-load-catches').addEventListener('click', loadCatches);
+    window.addEventListener('DOMContentLoaded', loadCatches);
+
+    // initial load
+    window.addEventListener('DOMContentLoaded', loadPlayers);
   </script>
 </body>
 </html>
