@@ -256,86 +256,80 @@ let lastEvent = null;
  *  - Clears playerCasts so players can cast again
  */
 async function gameLoop() {
-  // 0) pull & clear casts
+  // 0) pull & clear pending casts
   const castsToProcess = [...playerCasts];
   playerCasts.length = 0;
 
   // 1) advance phase
-  const prev = phases[currentPhaseIndex];
+  const prevPhase = phases[currentPhaseIndex];
   currentPhaseIndex = (currentPhaseIndex + 1) % phases.length;
   const phase = phases[currentPhaseIndex];
   lastPhase = phase;
-  console.log(`🕰️ ${prev} → ${phase}`);
+  console.log(`🕰️ Phase change: ${prevPhase} → ${phase}`);
 
-  // 2) tally & pick event
+  // 2) tally & pick event vote
   const voteCounts = {};
   for (const { cast } of castsToProcess) {
-    const t = cast.find(n => events[n]);
-    if (t != null) voteCounts[events[t]] = (voteCounts[events[t]] || 0) + 1;
+    const trigger = cast.find(n => events[n]);
+    if (trigger != null) {
+      const name = events[trigger];
+      voteCounts[name] = (voteCounts[name] || 0) + 1;
+    }
   }
   let chosenEvent = null;
-  const entries = Object.entries(voteCounts);
-  if (entries.length) {
-    const max = Math.max(...entries.map(([,c])=>c));
-    const top = entries.filter(([,c])=>c===max).map(([e])=>e);
-    chosenEvent = top[Math.floor(Math.random()*top.length)];
+  const votes = Object.entries(voteCounts);
+  if (votes.length) {
+    const maxVotes = Math.max(...votes.map(([,c])=>c));
+    const top = votes.filter(([,c])=>c===maxVotes).map(([e])=>e);
+    chosenEvent = top[Math.floor(Math.random() * top.length)];
   }
   lastEvent = chosenEvent;
-  console.log('🎯 votes', voteCounts, '→', chosenEvent);
-  
+  console.log('🎯 Event votes:', voteCounts, '→ chosen:', chosenEvent);
 
-  // 3) catch fish & record with phase/event
+  // 3) fetch fish data once
   await fishDb.read();
-  const fishEntries = Object.entries(fishDb.data.fish);
-  for (const { playerId, cast } of castsToProcess) {
+  const allFishEntries = Object.entries(fishDb.data.fish);
 
-    // 3a) pick depth for this cast
-    const depth = pickDepth();
-    
-    // new weighted pick, possibly filtered by feed-hours
-    const available = fishEntries.filter(
-      ([, stats]) => stats['feed-hours']?.includes(phase)
-    );
-    // const pick = pickWeighted(available.length ? available : fishEntries);
-    const allFishEntries = Object.entries(fishDb.data.fish);
+  // 4) process each cast
+  for (const { playerId, cast, depth } of castsToProcess) {
+    // 4a) select one fish matching this cast’s depth & current phase
     const pick = selectFishByDepthAndPhase(allFishEntries, depth, phase);
     if (!pick) {
-      console.log('No fish available to catch');
+      console.log(`⚠️ No fish at depth "${depth}" during "${phase}"`);
       continue;
     }
     const [type, stats] = pick;
 
-
-    // build the single catch object
+    // 4b) build the catch record
     const catchRecord = {
-      playerId,                     // if you’re tracking which player caught it
+      playerId,
       cast,
       depth,
       catch: { type, stats },
       event: lastEvent,
-      phase: lastPhase,
+      phase,
       at: new Date().toISOString(),
     };
 
-    // store it for claiming
+    // 4c) store for claim & history
     unclaimedCatches.push(catchRecord);
-    // store it in the permanent history
     catchHistory.push(catchRecord);
 
-    // 3d) log with depth
+    // 4d) log it
     console.log(
       `🎣 [${cast.join(',')}] @ depth "${depth}" → ${type}` +
       (lastEvent ? ` (+${lastEvent})` : '')
     );
   }
 
-  // 4) done
-  console.log(`✅ loop done (phase: ${phase})\n`);
+  // 5) loop complete
+  console.log(`✅ gameLoop complete (phase: ${phase})\n`);
 }
 
-
+// start immediately, then every 30 seconds
 gameLoop();
 setInterval(gameLoop, 30_000);
+
 
 /**
  * Given an array of [key, stats] entries, each with a numeric

@@ -1,4 +1,7 @@
 // node simulate.js
+// simulate.js
+// Simulate casts using depth, phase, feed-hours, and weighted fish selection
+
 import fs from 'fs';
 import path from 'path';
 
@@ -7,34 +10,27 @@ const file = path.join(process.cwd(), 'fish.json');
 const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
 const fishData = data.fish;
 
-// 2) Define phases
+// 2) Define phases and depth tiers
 const phases = ['dawn', 'day', 'dusk', 'night'];
 
-// 3) Weighted picker with feed-hours filtering
-function pickFish(phase) {
-  let entries = Object.entries(fishData)
-    .filter(([, stats]) =>
-      Array.isArray(stats['feed-hours']) &&
-      stats['feed-hours'].includes(phase)
-    );
-  if (!entries.length) entries = Object.entries(fishData);
-
-  // build cumulative weights
-  let totalWeight = 0;
+// 3) Weighted picker helper
+function pickWeighted(entries) {
+  let total = 0;
   const cum = [];
   for (const [type, stats] of entries) {
     const w = Number(stats['base-catch-rate'] || 0);
-    if (w <= 0) continue;
-    totalWeight += w;
-    cum.push({ threshold: totalWeight, type });
+    if (w > 0) {
+      total += w;
+      cum.push({ threshold: total, type, stats });
+    }
   }
-  if (!totalWeight) return null;
-
-  const r = Math.random() * totalWeight;
-  for (const { threshold, type } of cum) {
-    if (r < threshold) return type;
+  if (total === 0) return null;
+  const r = Math.random() * total;
+  for (const { threshold, type, stats } of cum) {
+    if (r < threshold) return [type, stats];
   }
-  return cum[cum.length - 1].type;
+  const last = cum[cum.length - 1];
+  return [last.type, last.stats];
 }
 
 // 4) Depth picker
@@ -53,29 +49,56 @@ function pickDepth() {
   return cum[cum.length - 1].tier;
 }
 
-// 5) Simulate
+// 5) Combined selection: filter by depth & phase, then weighted pick
+function selectFishByDepthAndPhase(depth, phase) {
+  const allEntries = Object.entries(fishData);
+  // filter by fish.depths array
+  const depthFiltered = allEntries.filter(([, stats]) =>
+    Array.isArray(stats.depths) && stats.depths.includes(depth)
+  );
+  if (!depthFiltered.length) return null;
+  // filter by feed-hours for current phase
+  const feedFiltered = depthFiltered.filter(([, stats]) =>
+    Array.isArray(stats['feed-hours']) && stats['feed-hours'].includes(phase)
+  );
+  const pickList = feedFiltered.length ? feedFiltered : depthFiltered;
+  return pickWeighted(pickList);
+}
+
+// 6) Simulation
 const SIMS = 1000;
-const fishCounts  = Object.fromEntries(Object.keys(fishData).map(t => [t,0]));
-const depthCounts = { shoals:0, shelf:0, dropoff:0, canyon:0, abyss:0 };
+const fishCounts = Object.keys(fishData).reduce((acc, t) => ({ ...acc, [t]: 0 }), {});
+const depthCounts = { shoals: 0, shelf: 0, dropoff: 0, canyon: 0, abyss: 0 };
+const phaseCounts = phases.reduce((acc, p) => ({ ...acc, [p]: 0 }), {});
 
 for (let i = 0; i < SIMS; i++) {
-  const phase = phases[Math.floor(Math.random()*phases.length)];
+  const phase = phases[Math.floor(Math.random() * phases.length)];
+  phaseCounts[phase]++;
+
   const depth = pickDepth();
   depthCounts[depth]++;
 
-  const caught = pickFish(phase);
-  if (caught) fishCounts[caught]++;
+  const pick = selectFishByDepthAndPhase(depth, phase);
+  if (pick) {
+    const [type] = pick;
+    fishCounts[type]++;
+  }
 }
 
-// 6) Output results
-console.log(`\nSimulated ${SIMS} casts\n`);
+// 7) Output results
+console.log(`\nSimulated ${SIMS} casts`);
 
-console.log('🐟 Fish catch distribution:');
+console.log('\nPhase distribution:');
+for (const [p, c] of Object.entries(phaseCounts)) {
+  console.log(`  ${p.padEnd(6)}: ${c.toString().padStart(4)} (${(c / SIMS * 100).toFixed(2)}%)`);
+}
+
+console.log('\nDepth distribution:');
+for (const [d, c] of Object.entries(depthCounts)) {
+  console.log(`  ${d.padEnd(8)}: ${c.toString().padStart(4)} (${(c / SIMS * 100).toFixed(2)}%)`);
+}
+
+console.log('\nFish catch distribution:');
 for (const [type, count] of Object.entries(fishCounts)) {
-  console.log(`  ${type.padEnd(20)} ${count.toString().padStart(4)} (${(count/SIMS*100).toFixed(2)}%)`);
-}
-
-console.log('\n🌊 Depth tier distribution:');
-for (const [tier, count] of Object.entries(depthCounts)) {
-  console.log(`  ${tier.padEnd(8)} ${count.toString().padStart(4)} (${(count/SIMS*100).toFixed(2)}%)`);
+  console.log(`  ${type.padEnd(20)}: ${count.toString().padStart(4)} (${(count / SIMS * 100).toFixed(2)}%)`);
 }

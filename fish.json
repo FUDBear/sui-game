@@ -2,8 +2,6 @@
   "fish": {
     "Murkgill": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -36,8 +34,6 @@
     },
     "Stonefin Gulper": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -56,8 +52,6 @@
     },
     "Hollowmaw Pike": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -73,8 +67,6 @@
     },
     "Flounder": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -90,8 +82,6 @@
     },
     "Abysal Eel": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -107,8 +97,6 @@
     },
     "Bonehook Lantern": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -124,8 +112,6 @@
     },
     "Dawn Angler": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -143,8 +129,6 @@
     },
     "Trout": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -165,8 +149,6 @@
     },
     "Spinegore Trout": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -184,8 +166,6 @@
     },
     "Old Boots": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -201,8 +181,6 @@
     },
     "Tin Cans": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -218,8 +196,6 @@
     },
     "Hooked Weeds": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -235,8 +211,6 @@
     },
     "Cola Can": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -252,8 +226,6 @@
     },
     "Drift Wood": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -269,8 +241,6 @@
     },
     "Broken Lure": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -286,8 +256,6 @@
     },
     "Plank": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -303,8 +271,6 @@
     },
     "Empty Bottle": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -320,8 +286,6 @@
     },
     "Bitterfin": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
@@ -337,8 +301,6 @@
     },
     "Tidehunter": {
       "strength": 8,
-      "min-depth": 0,
-      "max-depth": 20,
       "min-weight": 10,
       "max-weight": 20,
       "min-length": 10,
