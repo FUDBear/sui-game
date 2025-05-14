@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { client, address, mintNFT, callRewardWinner } from './suiClient.js';
 import { db } from './db.js'
 import { fishDb } from './fishDb.js'
+import { getBonusesFromCast, applyDepthBonuses, applyFishWeightBonuses, applyEventBonuses } from './castModifiers.js';
 import cors from 'cors';
 
 dotenv.config();
@@ -193,23 +194,30 @@ app.post('/playercast', (req, res) => {
   if (!playerId || !Array.isArray(cast)) {
     return res.status(400).json({ error: 'playerId and cast[] required' });
   }
+
   // 1) Prevent duplicate *pending* casts
   if (playerCasts.some(c => c.playerId === playerId)) {
     return res
       .status(400)
       .json({ error: 'You already have a pending cast. Wait for that to process.' });
   }
+
   // 2) Prevent new cast if you haven’t claimed your last catch
   if (unclaimedCatches.some(c => c.playerId === playerId)) {
     return res
       .status(400)
       .json({ error: 'Claim your previous catch before casting again.' });
   }
-  // 3) All good — queue the new cast
+
+  // 3) Compute card‐based bonuses from the cast indices
+  const bonuses = getBonusesFromCast(cast);
+
+  // 4) Queue the cast record
   playerCasts.push({
     playerId,
     cast,
-    depth: pickDepth(),           // assign depth here
+    depth: pickDepth(),
+    bonuses,
     timestamp: new Date().toISOString(),
   });
 
@@ -236,12 +244,6 @@ app.get('/history',   (_, res) => res.json(catchHistory));
 // ─── at top of your file, alongside other in‐memory stores ───
 const phases = ['dawn', 'day', 'dusk', 'night'];
 let currentPhaseIndex = 0; // start at 'dawn'
-const events = {
-  10: 'blood',
-  11: 'nightmare',
-  12: 'toxic',
-  13: 'frozen',
-};
 const playerCatches = [];
 const unclaimedCatches = [];
 const catchHistory = [];
@@ -267,15 +269,12 @@ async function gameLoop() {
   lastPhase = phase;
   console.log(`🕰️ Phase change: ${prevPhase} → ${phase}`);
 
-  // 2) tally & pick event vote
+  // 2a) inject any card‐based extra event votes
   const voteCounts = {};
-  for (const { cast } of castsToProcess) {
-    const trigger = cast.find(n => events[n]);
-    if (trigger != null) {
-      const name = events[trigger];
-      voteCounts[name] = (voteCounts[name] || 0) + 1;
-    }
+  for (const rec of castsToProcess) {
+    applyEventBonuses(voteCounts, rec.bonuses);
   }
+
   let chosenEvent = null;
   const votes = Object.entries(voteCounts);
   if (votes.length) {
@@ -291,33 +290,49 @@ async function gameLoop() {
   const allFishEntries = Object.entries(fishDb.data.fish);
 
   // 4) process each cast
-  for (const { playerId, cast, depth } of castsToProcess) {
-    // 4a) select one fish matching this cast’s depth & current phase
-    const pick = selectFishByDepthAndPhase(allFishEntries, depth, phase);
+  for (const rec of castsToProcess) {
+    // 4a) resolve final depth (card may override)
+    const finalDepth = applyDepthBonuses(rec.depth, rec.bonuses);
+
+    // 4b) filter fish by that depth & current phase’s feed‐hours
+    let pool = allFishEntries
+      .filter(([, stats]) =>
+        Array.isArray(stats.depths) && stats.depths.includes(finalDepth)
+      )
+      .filter(([, stats]) =>
+        Array.isArray(stats['feed-hours']) &&
+        stats['feed-hours'].includes(phase)
+      );
+
+    // 4c) apply any fish‐weight bonuses from cards
+    pool = applyFishWeightBonuses(pool, rec.bonuses);
+
+    // 4d) weighted pick
+    const pick = pickWeighted(pool);
     if (!pick) {
-      console.log(`⚠️ No fish at depth "${depth}" during "${phase}"`);
+      console.log(`⚠️ No fish at depth "${finalDepth}" during "${phase}"`);
       continue;
     }
     const [type, stats] = pick;
 
-    // 4b) build the catch record
+    // 4e) build the catch record
     const catchRecord = {
-      playerId,
-      cast,
-      depth,
+      playerId: rec.playerId,
+      cast: rec.cast,
+      depth: finalDepth,
       catch: { type, stats },
       event: lastEvent,
-      phase,
+      phase: lastPhase,
       at: new Date().toISOString(),
     };
 
-    // 4c) store for claim & history
+    // 4f) store for claim & history
     unclaimedCatches.push(catchRecord);
     catchHistory.push(catchRecord);
 
-    // 4d) log it
+    // 4g) log it
     console.log(
-      `🎣 [${cast.join(',')}] @ depth "${depth}" → ${type}` +
+      `🎣 [${rec.cast.join(',')}] @ depth "${finalDepth}" → ${type}` +
       (lastEvent ? ` (+${lastEvent})` : '')
     );
   }
@@ -326,7 +341,7 @@ async function gameLoop() {
   console.log(`✅ gameLoop complete (phase: ${phase})\n`);
 }
 
-// start immediately, then every 30 seconds
+// kick it off immediately, then every 30s
 gameLoop();
 setInterval(gameLoop, 30_000);
 
@@ -454,4 +469,38 @@ app.get('/state', (req, res) => {
     event: lastEvent,
     catches: playerCatches,
   });
+});
+
+app.post('/playercast', (req, res) => {
+  const { playerId, cast, cards = [] } = req.body;
+
+  if (!playerId || !Array.isArray(cast)) {
+    return res.status(400).json({ error: 'playerId and cast[] required' });
+  }
+  // 1) Prevent duplicate pending casts
+  if (playerCasts.some(c => c.playerId === playerId)) {
+    return res
+      .status(400)
+      .json({ error: 'You already have a pending cast. Wait for that to process.' });
+  }
+  // 2) Prevent new cast if you haven’t claimed your last catch
+  if (unclaimedCatches.some(c => c.playerId === playerId)) {
+    return res
+      .status(400)
+      .json({ error: 'Claim your previous catch before casting again.' });
+  }
+
+  // 3) Build the cast record with depth + card‐based bonuses
+  const bonuses = getBonusesFromCards(cards);
+  const record = {
+    playerId,
+    cast,
+    depth: pickDepth(),
+    cards,       // e.g. ['Grub Cluster','Blood Grub Cluster']
+    bonuses,     // array of {type:'forceDepth',…} and/or {type:'fishWeight',…}
+    timestamp: new Date().toISOString(),
+  };
+
+  playerCasts.push(record);
+  res.json({ success: true });
 });

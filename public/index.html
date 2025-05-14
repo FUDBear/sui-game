@@ -73,8 +73,7 @@
       const id = 'player_' + Date.now();
       const wins = Math.floor(Math.random()*10), plays = Math.floor(Math.random()*20);
       await fetch(`/player/${id}`, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ wins, plays })
       });
       loadPlayers();
@@ -121,22 +120,22 @@
         document.getElementById('state-players').innerHTML = Object.entries(players)
           .map(([id,st])=>`<li>${id}: wins=${st.wins}, plays=${st.plays}</li>`).join('') || '<li>(none)</li>';
 
-        // pending casts
+        // pending casts with depth
         const casts = await getJSON('/playercasts');
         document.getElementById('state-playercasts').innerHTML = casts
-          .map(c=>`<li>${c.playerId}: [${c.cast.join(', ')}] @${new Date(c.timestamp).toLocaleTimeString()}</li>`)
+          .map(c=>`<li>${c.playerId}: [${c.cast.join(', ')}] depth=${c.depth} @${new Date(c.timestamp).toLocaleTimeString()}</li>`)
           .join('') || '<li>(none)</li>';
 
-        // unclaimed
+        // unclaimed catches with depth
         const unclaimed = await getJSON('/unclaimed');
         document.getElementById('state-unclaimed').innerHTML = unclaimed
-          .map(c=>`<li>${c.playerId}: ${c.catch.type} @${new Date(c.at).toLocaleTimeString()}</li>`)
+          .map(c=>`<li>${c.playerId}: ${c.catch.type} (depth=${c.depth}) @${new Date(c.at).toLocaleTimeString()}</li>`)
           .join('') || '<li>(none)</li>';
 
-        // history
+        // history with depth
         const history = await getJSON('/history');
         document.getElementById('state-history').innerHTML = history
-          .map((c,i)=>`<li>#${i+1} ${c.playerId}: ${c.catch.type} (${c.event||'none'}) @${new Date(c.at).toLocaleTimeString()}</li>`)
+          .map((c,i)=>`<li>#${i+1} ${c.playerId}: [${c.cast.join(', ')}] depth=${c.depth} → ${c.catch.type} (${c.event||'none'}) @${new Date(c.at).toLocaleTimeString()}</li>`)
           .join('') || '<li>(none)</li>';
       } catch (e) {
         console.error('refreshState error', e);
