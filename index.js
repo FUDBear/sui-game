@@ -193,16 +193,29 @@ app.post('/playercast', (req, res) => {
   if (!playerId || !Array.isArray(cast)) {
     return res.status(400).json({ error: 'playerId and cast[] required' });
   }
-  // prevent new cast if you haven’t claimed your last one
+  // 1) Prevent duplicate *pending* casts
+  if (playerCasts.some(c => c.playerId === playerId)) {
+    return res
+      .status(400)
+      .json({ error: 'You already have a pending cast. Wait for that to process.' });
+  }
+  // 2) Prevent new cast if you haven’t claimed your last catch
   if (unclaimedCatches.some(c => c.playerId === playerId)) {
     return res
       .status(400)
       .json({ error: 'Claim your previous catch before casting again.' });
   }
-  // validate cast ints…
-  playerCasts.push({ playerId, cast, timestamp: new Date().toISOString() });
+  // 3) All good — queue the new cast
+  playerCasts.push({
+    playerId,
+    cast,
+    depth: pickDepth(),           // assign depth here
+    timestamp: new Date().toISOString(),
+  });
+
   res.json({ success: true });
 });
+
 
 app.post('/claim', (req, res) => {
   const { playerId } = req.body;
@@ -275,14 +288,29 @@ async function gameLoop() {
   await fishDb.read();
   const fishEntries = Object.entries(fishDb.data.fish);
   for (const { playerId, cast } of castsToProcess) {
-    // pick a random fish
-    const [ type, stats ] =
-      fishEntries[Math.floor(Math.random() * fishEntries.length)];
+
+    // 3a) pick depth for this cast
+    const depth = pickDepth();
+    
+    // new weighted pick, possibly filtered by feed-hours
+    const available = fishEntries.filter(
+      ([, stats]) => stats['feed-hours']?.includes(phase)
+    );
+    // const pick = pickWeighted(available.length ? available : fishEntries);
+    const allFishEntries = Object.entries(fishDb.data.fish);
+    const pick = selectFishByDepthAndPhase(allFishEntries, depth, phase);
+    if (!pick) {
+      console.log('No fish available to catch');
+      continue;
+    }
+    const [type, stats] = pick;
+
 
     // build the single catch object
     const catchRecord = {
       playerId,                     // if you’re tracking which player caught it
       cast,
+      depth,
       catch: { type, stats },
       event: lastEvent,
       phase: lastPhase,
@@ -294,9 +322,10 @@ async function gameLoop() {
     // store it in the permanent history
     catchHistory.push(catchRecord);
 
+    // 3d) log with depth
     console.log(
-      `🎣 cast [${cast.join(',')}] → ${type}` +
-      (chosenEvent ? ` (+${chosenEvent})` : '')
+      `🎣 [${cast.join(',')}] @ depth "${depth}" → ${type}` +
+      (lastEvent ? ` (+${lastEvent})` : '')
     );
   }
 
@@ -307,6 +336,117 @@ async function gameLoop() {
 
 gameLoop();
 setInterval(gameLoop, 30_000);
+
+/**
+ * Given an array of [key, stats] entries, each with a numeric
+ * stats['base-catch-rate'], returns one entry chosen by weight.
+ */
+function pickWeighted(fishEntries) {
+  // 1) build cumulative weights
+  const cumulative = [];
+  let total = 0;
+  for (const [type, stats] of fishEntries) {
+    const w = Number(stats['base-catch-rate'] || 0);
+    if (w <= 0) continue;          // skip zero-weight fish
+    total += w;
+    cumulative.push([total, type, stats]);
+  }
+  if (total === 0) return null;   // fallback if nothing has weight
+
+  // 2) draw a random number from [0, total)
+  const r = Math.random() * total;
+
+  // 3) find first cumulative weight ≥ r
+  for (const [cumWeight, type, stats] of cumulative) {
+    if (r < cumWeight) {
+      return [type, stats];
+    }
+  }
+  // should never get here, but return the last
+  const last = cumulative[cumulative.length - 1];
+  return [last[1], last[2]];
+}
+
+/**
+ * Pick a depth tier based on weighted probabilities.
+ * Tiers:
+ *  - shoals:  80
+ *  - shelf:   50
+ *  - dropoff: 20
+ *  - canyon:   5
+ *  - abyss:    0.1
+ */
+function pickDepth() {
+  const weights = {
+    shoals:  80,
+    shelf:   50,
+    dropoff: 20,
+    canyon:   5,
+    abyss:    0.1,
+  };
+
+  // Build a cumulative weight array
+  const cumulative = [];
+  let total = 0;
+  for (const [tier, w] of Object.entries(weights)) {
+    total += w;
+    cumulative.push({ tier, threshold: total });
+  }
+
+  // Draw a random number in [0, total)
+  const r = Math.random() * total;
+
+  // Find first threshold > r
+  for (const { tier, threshold } of cumulative) {
+    if (r < threshold) {
+      return tier;
+    }
+  }
+  // Fallback
+  return cumulative[cumulative.length - 1].tier;
+}
+
+// Example usage:
+const experiments = 100000;
+const counts = { shoals:0, shelf:0, dropoff:0, canyon:0, abyss:0 };
+for (let i = 0; i < experiments; i++) {
+  counts[pickDepth()]++;
+}
+console.log(
+  Object.fromEntries(
+    Object.entries(counts).map(([t,c]) => [t, (c/experiments*100).toFixed(2)+'%'])
+  )
+);
+// → e.g. { shoals: "44.8%", shelf: "28.3%", dropoff: "11.4%", canyon: "2.7%", abyss: "0.1%" }
+
+/**
+ * Selects one fish entry ([type, stats]) given:
+ *  - fishEntries: Array of [type, stats]
+ *  - depth: one of "shoals","shelf","dropoff","canyon","abyss"
+ *  - phase: one of your phases ("dawn","day","dusk","night")
+ *
+ * Returns [type, stats] or null if no fish match.
+ */
+function selectFishByDepthAndPhase(fishEntries, depth, phase) {
+  // 1) Filter by depth tier
+  const depthFiltered = fishEntries.filter(([, stats]) =>
+    Array.isArray(stats.depths) &&
+    stats.depths.includes(depth)
+  );
+  if (depthFiltered.length === 0) return null;
+
+  // 2) Filter by feed-hours
+  const feedFiltered = depthFiltered.filter(([, stats]) =>
+    Array.isArray(stats['feed-hours']) &&
+    stats['feed-hours'].includes(phase)
+  );
+  const pickList = feedFiltered.length ? feedFiltered : depthFiltered;
+
+  // 3) Weighted pick (uses your existing pickWeighted)
+  return pickWeighted(pickList);
+}
+
+
 
 // (Optional) expose an endpoint to inspect past catches:
 app.get('/catches', (req, res) => {
