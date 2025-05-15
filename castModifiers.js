@@ -1,10 +1,14 @@
-// castModifiers.js
 // Centralized card-based cast modifiers in plain JS with JSDoc types
 
 import { cardsDb } from './cardsDB.js';
 await cardsDb.read();
 
 /**
+ * @typedef {Object} RarityWeightBonus
+ * @property {'rarityWeight'} type
+ * @property {string} rarity
+ * @property {number} multiplier
+ *
  * @typedef {Object} ForceDepthBonus
  * @property {'forceDepth'} type
  * @property {string} depth
@@ -23,7 +27,17 @@ await cardsDb.read();
  * @property {string} event
  * @property {number} votes
  *
- * @typedef {ForceDepthBonus | GlobalFishWeightBonus | FishWeightBonus | EventVoteBonus} Bonus
+ * @typedef {Object} RarityWeightBonus
+ * @property {'rarityWeight'} type
+ * @property {string} rarity
+ * @property {number} multiplier
+ *
+ * @typedef {Object} BaseFishRateBonus
+ * @property {'baseFishRate'} type
+ * @property {number} amount
+ *
+ * @typedef {ForceDepthBonus | GlobalFishWeightBonus | FishWeightBonus |
+ *            EventVoteBonus | RarityWeightBonus | BaseFishRateBonus} Bonus
  */
 
 /**
@@ -31,7 +45,12 @@ await cardsDb.read();
  * @param {string[]} cardNames
  * @returns {Bonus[]}
  */
-export function getBonusesFromCards(cardNames) {
+export function getBonusesFromCards(cardNames = []) {
+  if (!Array.isArray(cardNames)) {
+    console.warn('getBonusesFromCards expected an array, got', cardNames);
+    cardNames = [];
+  }
+
   /** @type {Bonus[]} */
   const bonuses = [];
 
@@ -56,6 +75,12 @@ export function getBonusesFromCards(cardNames) {
     if (Array.isArray(card['force-event'])) {
       for (const ev of card['force-event']) {
         bonuses.push({ type: 'eventVote', event: ev, votes: 1 });
+      }
+    }
+
+    if (Array.isArray(card['attract-rarity']) && card['attract-weight'] > 1) {
+      for (const rar of card['attract-rarity']) {
+        bonuses.push({ type: 'rarityWeight', rarity: rar, multiplier: card['attract-weight'] });
       }
     }
   }
@@ -100,6 +125,27 @@ export function applyFishWeightBonuses(pickList, bonuses) {
 }
 
 /**
+ * Applies any rarity-based bonuses to a pickList.
+ * @param {[string, any][]} pickList
+ * @param {Bonus[]} bonuses
+ * @returns {[string, any][]}
+ */
+export function applyRarityWeightBonuses(pickList, bonuses) {
+  const rarityMults = bonuses
+    .filter(b => b.type === 'rarityWeight')
+    .reduce((m, b) => {
+      m[b.rarity] = (m[b.rarity] || 1) * b.multiplier;
+      return m;
+    }, {});
+
+  return pickList.map(([type, stats]) => {
+    const base = Number(stats['base-catch-rate'] || 0);
+    const rmul = rarityMults[stats.rarity] || 1;
+    return [type, { ...stats, 'base-catch-rate': base * rmul }];
+  });
+}
+
+/**
  * Add extra event votes into the voteCounts object
  * @param {{[event: string]: number}} voteCounts
  * @param {Bonus[]} bonuses
@@ -113,16 +159,38 @@ export function applyEventBonuses(voteCounts, bonuses) {
 }
 
 /**
+ * Applies a flat bonus to all non-junk fish
+ * @param {[string, any][]} pickList
+ * @param {Bonus[]} bonuses
+ * @returns {[string, any][]}
+ */
+export function applyBaseFishRateBonus(pickList, bonuses) {
+  const baseBonus = bonuses.find(b => b.type === 'baseFishRate');
+  if (!baseBonus) return pickList;
+  const amt = baseBonus.amount;
+
+  return pickList.map(([type, stats]) => {
+    if (stats.rarity !== 'junk') {
+      const base = Number(stats['base-catch-rate'] || 0);
+      return [type, { ...stats, 'base-catch-rate': base + amt }];
+    }
+    return [type, stats];
+  });
+}
+
+/**
  * Given the raw cast array of numbers, pull matching cards by index
- * and return combined bonuses.
+ * and return combined bonuses (including base-fish-rate).
  * @param {number[]} cast
  * @returns {Bonus[]}
  */
-export function getBonusesFromCast(cast) {
-  /** @type {string[]} */
-  const cardNames = [];
+export function getBonusesFromCast(cast = []) {
+  if (!Array.isArray(cast)) {
+    console.warn('getBonusesFromCast expected array, got', cast);
+    cast = [];
+  }
 
-  // Build index→name map
+  // 1) extract card names by index
   const idxMap = new Map();
   for (const [name, card] of Object.entries(cardsDb.data.cards)) {
     if (typeof card.index === 'number') {
@@ -130,11 +198,27 @@ export function getBonusesFromCast(cast) {
     }
   }
 
-  // Collect unique names
+  const cardNames = [];
   for (const n of cast) {
     const nm = idxMap.get(n);
-    if (nm && !cardNames.includes(nm)) cardNames.push(nm);
+    if (nm && !cardNames.includes(nm)) {
+      cardNames.push(nm);
+    }
   }
 
-  return getBonusesFromCards(cardNames);
+  // 2) gather all standard bonuses
+  const bonuses = getBonusesFromCards(cardNames);
+
+  // 3) pick up any base-fish-catch-rate from the cards themselves
+  for (const n of cast) {
+    const card = cardsDb.data.cards[ [...idxMap.keys()].find(k => k === n) ];
+    if (card && typeof card['base-fish-catch-rate'] === 'number') {
+      bonuses.push({
+        type: 'baseFishRate',
+        amount: card['base-fish-catch-rate']
+      });
+    }
+  }
+
+  return bonuses;
 }

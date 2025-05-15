@@ -1,104 +1,144 @@
 // node simulate.js
-// simulate.js
-// Simulate casts using depth, phase, feed-hours, and weighted fish selection
+// Simulate 1,000 casts with full game logic (depth‐force, events, card bonuses, etc.)
 
-import fs from 'fs';
+import fs   from 'fs';
 import path from 'path';
 
+import {
+  getBonusesFromCast,
+  applyDepthBonuses,
+  applyEventBonuses,
+  applyFishWeightBonuses,
+  applyRarityWeightBonuses,
+  applyBaseFishRateBonus
+} from './castModifiers.js';      // assumes this already did `await cardsDb.read()`
+
+import { cardsDb } from './cardsDB.js';
+await cardsDb.read();
+
 // 1) Load fish.json
-const file = path.join(process.cwd(), 'fish.json');
-const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
-const fishData = data.fish;
+const fishFile = path.join(process.cwd(), 'fish.json');
+const fishData = JSON.parse(fs.readFileSync(fishFile, 'utf-8')).fish;
 
-// 2) Define phases and depth tiers
-const phases = ['dawn', 'day', 'dusk', 'night'];
-
-// 3) Weighted picker helper
-function pickWeighted(entries) {
+// 2) Phase list & weighted depth picker
+const phases = ['dawn','day','dusk','night'];
+function pickDepth() {
+  const weights = { shoals:80, shelf:50, dropoff:20, canyon:5, abyss:0.1 };
   let total = 0;
   const cum = [];
-  for (const [type, stats] of entries) {
-    const w = Number(stats['base-catch-rate'] || 0);
-    if (w > 0) {
+  for (const [tier,w] of Object.entries(weights)) {
+    total += w;
+    cum.push({ threshold: total, tier });
+  }
+  const r = Math.random()*total;
+  return cum.find(e=>r<e.threshold).tier;
+}
+
+// 3) Helper: weighted pick from [type,stats] list
+function pickWeighted(list) {
+  let total = 0;
+  const cum = [];
+  for (const [type,stats] of list) {
+    const w = Number(stats['base-catch-rate']||0);
+    if (w>0) {
       total += w;
       cum.push({ threshold: total, type, stats });
     }
   }
   if (total === 0) return null;
-  const r = Math.random() * total;
-  for (const { threshold, type, stats } of cum) {
-    if (r < threshold) return [type, stats];
-  }
-  const last = cum[cum.length - 1];
-  return [last.type, last.stats];
+  const r = Math.random()*total;
+  return cum.find(e=>r<e.threshold) ?? cum[cum.length-1];
 }
 
-// 4) Depth picker
-function pickDepth() {
-  const weights = { shoals: 80, shelf: 50, dropoff: 20, canyon: 5, abyss: 0.1 };
-  let total = 0;
-  const cum = [];
-  for (const [tier, w] of Object.entries(weights)) {
-    total += w;
-    cum.push({ threshold: total, tier });
+// 4) Active‐fish filter (feed‐hours + only‐active‐events)
+function isFishCurrentlyActive(stats, phase, chosenEvent) {
+  if (!Array.isArray(stats['feed-hours']) ||
+      !stats['feed-hours'].includes(phase)) {
+    return false;
   }
-  const r = Math.random() * total;
-  for (const { threshold, tier } of cum) {
-    if (r < threshold) return tier;
+  if (Array.isArray(stats['only-active-events']) &&
+      stats['only-active-events'].length > 0) {
+    return chosenEvent != null &&
+           stats['only-active-events'].includes(chosenEvent);
   }
-  return cum[cum.length - 1].tier;
+  return true;
 }
 
-// 5) Combined selection: filter by depth & phase, then weighted pick
-function selectFishByDepthAndPhase(depth, phase) {
-  const allEntries = Object.entries(fishData);
-  // filter by fish.depths array
-  const depthFiltered = allEntries.filter(([, stats]) =>
-    Array.isArray(stats.depths) && stats.depths.includes(depth)
-  );
-  if (!depthFiltered.length) return null;
-  // filter by feed-hours for current phase
-  const feedFiltered = depthFiltered.filter(([, stats]) =>
-    Array.isArray(stats['feed-hours']) && stats['feed-hours'].includes(phase)
-  );
-  const pickList = feedFiltered.length ? feedFiltered : depthFiltered;
-  return pickWeighted(pickList);
-}
+// 5) Collect all card indices for random draws
+const allCardIndices = Object.values(cardsDb.data.cards)
+  .filter(c=>typeof c.index === 'number')
+  .map(c=>c.index);
 
-// 6) Simulation
+// 6) Simulation counters
 const SIMS = 1000;
-const fishCounts = Object.keys(fishData).reduce((acc, t) => ({ ...acc, [t]: 0 }), {});
-const depthCounts = { shoals: 0, shelf: 0, dropoff: 0, canyon: 0, abyss: 0 };
-const phaseCounts = phases.reduce((acc, p) => ({ ...acc, [p]: 0 }), {});
+const fishCounts  = Object.fromEntries(Object.keys(fishData).map(t=>[t,0]));
+const depthCounts = { shoals:0, shelf:0, dropoff:0, canyon:0, abyss:0 };
+const phaseCounts = Object.fromEntries(phases.map(p=>[p,0]));
+const eventCounts = {};
 
-for (let i = 0; i < SIMS; i++) {
-  const phase = phases[Math.floor(Math.random() * phases.length)];
+for (let i=0; i<SIMS; i++) {
+  // — pick phase
+  const phase = phases[Math.floor(Math.random()*phases.length)];
   phaseCounts[phase]++;
 
-  const depth = pickDepth();
+  // — pick 3 random cards
+  const cast = Array.from({length:3},_=>
+    allCardIndices[Math.floor(Math.random()*allCardIndices.length)]
+  );
+
+  // — compute bonuses
+  const bonuses = getBonusesFromCast(cast);
+
+  // — depth (with forceDepth override)
+  const baseDepth = pickDepth();
+  const depth     = applyDepthBonuses(baseDepth, bonuses);
   depthCounts[depth]++;
 
-  const pick = selectFishByDepthAndPhase(depth, phase);
-  if (pick) {
-    const [type] = pick;
-    fishCounts[type]++;
+  // — event voting
+  const voteCounts = {};
+  applyEventBonuses(voteCounts, bonuses);
+  let chosenEvent = null;
+  if (Object.keys(voteCounts).length) {
+    const entries = Object.entries(voteCounts);
+    const max = Math.max(...entries.map(([,c])=>c));
+    const top = entries.filter(([,c])=>c===max).map(([e])=>e);
+    chosenEvent = top[Math.floor(Math.random()*top.length)];
+    eventCounts[chosenEvent] = (eventCounts[chosenEvent]||0) + 1;
   }
-}
 
-// 7) Output results
-console.log(`\nSimulated ${SIMS} casts`);
+  // — build fish pickList: filter by feed‐hours & only‐active‐events
+  const pickList = Object.entries(fishData)
+    .filter(([,s]) => isFishCurrentlyActive(s, phase, chosenEvent))
+    .map(([type,stats]) => {
+      // apply event-variations multipliers
+      let rate = Number(stats['base-catch-rate']||0);
+      if (chosenEvent && Array.isArray(stats['event-variations'])) {
+        const ev = stats['event-variations'].find(x=>x.event===chosenEvent);
+        if (ev?.multiplier) rate *= ev.multiplier;
+      }
+      return [type, {...stats, 'base-catch-rate': rate}];
+    });
 
-console.log('\nPhase distribution:');
-for (const [p, c] of Object.entries(phaseCounts)) {
-  console.log(`  ${p.padEnd(6)}: ${c.toString().padStart(4)} (${(c / SIMS * 100).toFixed(2)}%)`);
-}
+  // — apply all card‐based modifiers
+  let modified = applyFishWeightBonuses(pickList, bonuses);
+  modified = applyRarityWeightBonuses(modified, bonuses);
+  modified = applyBaseFishRateBonus(modified, bonuses);
 
-console.log('\nDepth distribution:');
-for (const [d, c] of Object.entries(depthCounts)) {
-  console.log(`  ${d.padEnd(8)}: ${c.toString().padStart(4)} (${(c / SIMS * 100).toFixed(2)}%)`);
-}
+  // — final draw
+  const winner = pickWeighted(modified);
+  if (winner) fishCounts[winner.type]++;
 
+} // end sims loop
+
+// 7) Print summary
+console.log(`\nSimulated ${SIMS} casts with random 3-card casts\n`);
+console.log('Phase distribution:', phaseCounts);
+console.log('Depth distribution:', depthCounts);
+console.log('Event distribution:', eventCounts);
 console.log('\nFish catch distribution:');
-for (const [type, count] of Object.entries(fishCounts)) {
-  console.log(`  ${type.padEnd(20)}: ${count.toString().padStart(4)} (${(count / SIMS * 100).toFixed(2)}%)`);
+for (const [fish, count] of Object.entries(fishCounts)) {
+  console.log(
+    `  ${fish.padEnd(20)}: ${count.toString().padStart(4)} `
+  + `(${(count/SIMS*100).toFixed(2)}%)`
+  );
 }

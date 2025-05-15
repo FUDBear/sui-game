@@ -4,151 +4,184 @@
   <meta charset="UTF-8" />
   <title>SUI Game Dashboard</title>
   <style>
-    body { font-family: sans-serif; padding: 1rem; }
-    h1, h2, h3 { margin-bottom: 0.5rem; }
-    button { margin: 0.5rem 0; }
-    ul { padding-left: 1.2rem; margin-bottom: 1rem; }
-    #game-state { background: #73cbf1; padding: 1rem; margin-top: 2rem; border-radius: 8px; }
+    body { font-family: sans-serif; padding: 1rem; max-width: 800px; margin: auto; }
+    h1 { margin-bottom: 1rem; }
+    section { margin-bottom: 2rem; }
+    button { margin-right: .5rem; }
+    label { margin-right: .5rem; }
+    input { margin-right: 1rem; }
+    #game-state { background: #eef9ff; padding: 1rem; border-radius: 8px; }
+    #game-state h2 { margin-top: 0; }
+    ul { padding-left: 1.2rem; }
+    li { margin-bottom: .3rem; }
   </style>
 </head>
 <body>
   <h1>SUI Game Dashboard</h1>
 
-  <button id="btn-load-players">Reload Players</button>
-  <ul id="players"></ul>
+  <section>
+    <h2>Cast / Claim</h2>
+    <label for="cast-player-id">Player ID</label>
+    <input type="text" id="cast-player-id" placeholder="player_..." style="width:180px;">
+    <label for="cast-input">Cards (e.g. 5,3,9)</label>
+    <input type="text" id="cast-input" placeholder="comma-separated" style="width:200px;">
+    <button id="btn-cast">Cast</button>
+    <button id="btn-claim">Claim</button>
+    <button id="btn-cast-all">Cast All (Random)</button>
+    <button id="btn-claim-all">Claim All</button>
+  </section>
 
-  <button id="btn-add-player">Add Dummy Player</button>
-
-  <h2>Player Cast</h2>
-  <div>
-    <label for="cast-player-id">Player ID:</label>
-    <input type="text" id="cast-player-id" placeholder="player_..." style="width:200px; margin:0 .5rem;">
-    <input type="text" id="cast-input" placeholder="e.g. 5,3,9,1" style="width:200px;">
-    <button id="btn-cast">Submit Cast</button>
-    <button id="btn-claim">Claim Catch</button>
-  </div>
-
-  <!-- Game State Panel -->
-  <div id="game-state">
+  <section id="game-state">
     <h2>Game State</h2>
     <div>Phase: <strong><span id="state-phase">–</span></strong></div>
+    <div>Hour:  <strong><span id="state-hour">–</span></strong></div>
     <div>Event: <strong><span id="state-event">–</span></strong></div>
 
     <h3>Players</h3>
-    <ul id="state-players"></ul>
+    <ul id="state-players"><li><em>loading…</em></li></ul>
 
     <h3>Pending Casts</h3>
-    <ul id="state-playercasts"></ul>
+    <ul id="state-playercasts"><li><em>loading…</em></li></ul>
 
     <h3>Unclaimed Catches</h3>
-    <ul id="state-unclaimed"></ul>
+    <ul id="state-unclaimed"><li><em>loading…</em></li></ul>
 
     <h3>Catch History</h3>
-    <ul id="state-history"></ul>
-  </div>
+    <ul id="history-list"><li><em>loading…</em></li></ul>
+  </section>
 
   <script>
-    // — Utilities —
+    // — Helpers —
     async function getJSON(path) {
       const res = await fetch(path);
       if (!res.ok) throw new Error(res.statusText);
       return res.json();
     }
 
-    // — Players UI —
-    async function loadPlayers() {
-      const ul = document.getElementById('players');
-      ul.textContent = 'Loading…';
-      try {
-        const players = await getJSON('/players');
-        ul.innerHTML = Object.entries(players)
-          .map(([id, st]) => `<li>${id}: wins=${st.wins}, plays=${st.plays}</li>`)
-          .join('') || '<li><em>(no players)</em></li>';
-      } catch (e) {
-        ul.innerHTML = `<li style="color:red">${e.message}</li>`;
-      }
-    }
-
-    async function addDummyPlayer() {
-      const id = 'player_' + Date.now();
-      const wins = Math.floor(Math.random()*10), plays = Math.floor(Math.random()*20);
-      await fetch(`/player/${id}`, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ wins, plays })
-      });
-      loadPlayers();
-      refreshState();
-    }
-
-    // — Casting & Claiming —
-    async function submitCast() {
-      const playerId = document.getElementById('cast-player-id').value.trim();
-      const raw = document.getElementById('cast-input').value;
-      const cast = raw.split(',').map(n=>parseInt(n,10)).filter(n=>Number.isInteger(n));
-      if (!playerId || cast.length===0) return alert('Need ID + valid ints');
-      const resp = await fetch('/playercast', {
-        method:'POST', headers:{'Content-Type':'application/json'},
+    // — Single Cast / Claim —
+    async function submitCastFor(playerId, cast) {
+      return fetch('/playercast', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ playerId, cast })
       });
-      const j = await resp.json();
-      if (!j.success) return alert('Error: '+j.error);
-      loadPlayers(); refreshState();
     }
-    async function claimCatch() {
-      const playerId = document.getElementById('cast-player-id').value.trim();
-      if (!playerId) return alert('Enter Player ID');
-      const resp = await fetch('/claim', {
-        method:'POST', headers:{'Content-Type':'application/json'},
+    async function submitClaimFor(playerId) {
+      return fetch('/claim', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ playerId })
       });
-      const j = await resp.json();
-      if (!j.success) return alert('Error: '+j.error);
-      alert('Claimed: '+JSON.stringify(j.claimed));
+    }
+
+    async function submitCast() {
+      const id  = document.getElementById('cast-player-id').value.trim();
+      const raw = document.getElementById('cast-input').value;
+      const cast = raw.split(',').map(n=>parseInt(n,10)).filter(n=>Number.isInteger(n));
+      if (!id || cast.length===0) return alert('Need player ID and at least one valid card index');
+      const res = await submitCastFor(id, cast);
+      const j   = await res.json();
+      if (!j.success) return alert('Error: ' + j.error);
       refreshState();
     }
 
-    // — Game State Panel —
+    async function submitClaim() {
+      const id = document.getElementById('cast-player-id').value.trim();
+      if (!id) return alert('Need player ID');
+      const res = await submitClaimFor(id);
+      const j   = await res.json();
+      if (!j.success) return alert('Error: ' + j.error);
+      alert(`Claimed: ${j.claimed.catch.type} @ ${new Date(j.claimed.at).toLocaleTimeString()}`);
+      refreshState();
+    }
+
+    // — Cast All (random 3 cards each) —
+    const MAX_CARD_INDEX = 16;  // update if you ever add more
+    function randomCast() {
+      return Array.from({length:3}, () => Math.floor(Math.random()*(MAX_CARD_INDEX+1)));
+    }
+    async function castForAll() {
+      try {
+        const players = await getJSON('/players');
+        for (const id of Object.keys(players)) {
+          const cast = randomCast();
+          const res  = await submitCastFor(id, cast);
+          const j    = await res.json();
+          console.log(res.ok
+            ? `✅ [${id}] cast [${cast}] queued`
+            : `❌ [${id}] cast failed: ${j.error}`
+          );
+        }
+      } catch (e) {
+        console.error('castForAll error', e);
+        alert('Could not load players');
+      }
+      refreshState();
+    }
+
+    // — Claim All —
+    async function claimAll() {
+      try {
+        const unclaimed = await getJSON('/unclaimed');
+        for (const c of unclaimed) {
+          const id = c.playerId;
+          const res = await submitClaimFor(id);
+          const j   = await res.json();
+          console.log(res.ok
+            ? `✅ [${id}] claimed`
+            : `❌ [${id}] claim failed: ${j.error}`
+          );
+        }
+      } catch (e) {
+        console.error('claimAll error', e);
+        alert('Could not load unclaimed');
+      }
+      refreshState();
+    }
+
+    // — Refresh Everything —
     async function refreshState() {
       try {
-        // phase & event
-        const { phase, event } = await getJSON('/state');
+        // Phase / Event / Hour
+        const { phase, event, hour } = await getJSON('/state');
         document.getElementById('state-phase').textContent = phase;
-        document.getElementById('state-event').textContent = event||'None';
+        document.getElementById('state-event').textContent = event || 'None';
+        document.getElementById('state-hour').textContent  = hour != null ? hour : '–';
 
-        // players
+        // Players
         const players = await getJSON('/players');
         document.getElementById('state-players').innerHTML = Object.entries(players)
-          .map(([id,st])=>`<li>${id}: wins=${st.wins}, plays=${st.plays}</li>`).join('') || '<li>(none)</li>';
+          .map(([id,s])=>`<li>${id}: wins=${s.wins}, plays=${s.plays}</li>`).join('') ||
+          '<li><em>(no players)</em></li>';
 
-        // pending casts with depth
+        // Pending Casts
         const casts = await getJSON('/playercasts');
         document.getElementById('state-playercasts').innerHTML = casts
-          .map(c=>`<li>${c.playerId}: [${c.cast.join(', ')}] depth=${c.depth} @${new Date(c.timestamp).toLocaleTimeString()}</li>`)
-          .join('') || '<li>(none)</li>';
+          .map(c=>`<li>${c.playerId}: [${c.cast.join(', ')}] @${new Date(c.timestamp).toLocaleTimeString()}</li>`)
+          .join('') || '<li><em>(none)</em></li>';
 
-        // unclaimed catches with depth
+        // Unclaimed
         const unclaimed = await getJSON('/unclaimed');
         document.getElementById('state-unclaimed').innerHTML = unclaimed
-          .map(c=>`<li>${c.playerId}: ${c.catch.type} (depth=${c.depth}) @${new Date(c.at).toLocaleTimeString()}</li>`)
-          .join('') || '<li>(none)</li>';
+          .map(c=>`<li>${c.playerId}: ${c.catch.type} @${new Date(c.at).toLocaleTimeString()}</li>`)
+          .join('') || '<li><em>(none)</em></li>';
 
-        // history with depth
+        // History
         const history = await getJSON('/history');
-        document.getElementById('state-history').innerHTML = history
-          .map((c,i)=>`<li>#${i+1} ${c.playerId}: [${c.cast.join(', ')}] depth=${c.depth} → ${c.catch.type} (${c.event||'none'}) @${new Date(c.at).toLocaleTimeString()}</li>`)
-          .join('') || '<li>(none)</li>';
+        document.getElementById('history-list').innerHTML = history
+          .map(line=>`<li>${line}</li>`).join('') ||
+          '<li><em>(none)</em></li>';
       } catch (e) {
         console.error('refreshState error', e);
       }
     }
 
-    // — Event wiring & initial load —
-    document.getElementById('btn-load-players').onclick = loadPlayers;
-    document.getElementById('btn-add-player').onclick  = addDummyPlayer;
-    document.getElementById('btn-cast').onclick        = submitCast;
-    document.getElementById('btn-claim').onclick       = claimCatch;
+    // — Wire up buttons & auto-refresh —
+    document.getElementById('btn-cast').onclick      = submitCast;
+    document.getElementById('btn-claim').onclick     = submitClaim;
+    document.getElementById('btn-cast-all').onclick  = castForAll;
+    document.getElementById('btn-claim-all').onclick = claimAll;
 
-    loadPlayers();
     refreshState();
     setInterval(refreshState, 5000);
   </script>

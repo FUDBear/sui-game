@@ -9,8 +9,10 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 5,
         "attract-type": [],
-        "attract-weight": 0,
+        "attract-rarity": [ "uncommon" ],
+        "attract-weight": 30,
         "force-event": []
       },
       "Rusty Prong": {
@@ -22,9 +24,11 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 5,
         "attract-type": [],
-        "attract-weight": 0,
-        "force-event": ["toxic" , "nightmare"]
+        "attract-rarity": [ "uncommon" ],
+        "attract-weight": 50,
+        "force-event": []
       },
       "Grub Cluster": {
         "index": 2,
@@ -35,8 +39,10 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 10,
         "attract-type": [],
-        "attract-weight": 0,
+        "attract-rarity": [ "uncommon" ],
+        "attract-weight": 50,
         "force-event": []
       },
       "Blood Grub Cluster": {
@@ -48,34 +54,40 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 10,
         "attract-type": [],
-        "attract-weight": 0,
+        "attract-rarity": [ "rare" ],
+        "attract-weight": 20,
         "force-event": []
       },
       "Leach Ball": {
         "index": 4,
         "description": "A compact ball of leeches that wriggle enticingly beneath the surface.",
-        "rarity": "uncommon",
+        "rarity": "rare",
         "image": "https://i.imgur.com/1234567890.png",
         "price": 120,
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 10,
         "attract-type": [],
-        "attract-weight": 0,
+        "attract-rarity": [ "rare" ],
+        "attract-weight": 40,
         "force-event": []
       },
       "Bone Shard Jig": {
         "index": 5,
         "description": "A jig fashioned from sharp bone shards, ideal for tougher catches.",
-        "rarity": "rare",
+        "rarity": "legendary",
         "image": "https://i.imgur.com/1234567890.png",
         "price": 300,
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
-        "attract-type": [],
-        "attract-weight": 0,
+        "base-fish-catch-rate": 10,
+        "attract-type": [ "Bonehook Lantern" ],
+        "attract-rarity": [],
+        "attract-weight": 5,
         "force-event": []
       },
       "Shadow-Silk Spinner": {
@@ -87,8 +99,10 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 10,
         "attract-type": [],
-        "attract-weight": 0,
+        "attract-rarity": [ "legendary" ],
+        "attract-weight": 100,
         "force-event": []
       },
       "Ember-Silk Spinner": {
@@ -100,8 +114,10 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 10,
         "attract-type": [],
-        "attract-weight": 0,
+        "attract-rarity": [ "mythic" ],
+        "attract-weight": 100,
         "force-event": []
       },
       "None": {
@@ -113,7 +129,9 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 0,
         "attract-type": [],
+        "attract-rarity": [],
         "attract-weight": 0,
         "force-event": []
       },
@@ -126,7 +144,9 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 0,
         "attract-type": [],
+        "attract-rarity": [],
         "attract-weight": 0,
         "force-event": [ "nightmare" ]
       },
@@ -139,7 +159,9 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 30,
         "attract-type": [],
+        "attract-rarity": [],
         "attract-weight": 0,
         "force-event": []
       },
@@ -152,7 +174,9 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 5,
         "attract-type": [],
+        "attract-rarity": [],
         "attract-weight": 0,
         "force-event": [ "frozen" ]
       },
@@ -165,7 +189,9 @@
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 0,
         "attract-type": [],
+        "attract-rarity": [],
         "attract-weight": 0,
         "force-event": [ "blood" ]
       },
@@ -175,10 +201,12 @@
         "rarity": "common",
         "image": "https://i.imgur.com/1234567890.png",
         "price": 70,
-        "depth-force": "",
+        "depth-force": "abyss",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 0,
         "attract-type": [],
+        "attract-rarity": [],
         "attract-weight": 0,
         "force-event": []
       },
@@ -188,10 +216,12 @@
         "rarity": "uncommon",
         "image": "https://i.imgur.com/1234567890.png",
         "price": 130,
-        "depth-force": "",
+        "depth-force": "canyon",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 0,
         "attract-type": [],
+        "attract-rarity": [],
         "attract-weight": 0,
         "force-event": []
       },
@@ -201,10 +231,12 @@
         "rarity": "common",
         "image": "https://i.imgur.com/1234567890.png",
         "price": 80,
-        "depth-force": "",
+        "depth-force": "dropoff",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 0,
         "attract-type": [],
+        "attract-rarity": [],
         "attract-weight": 0,
         "force-event": []
       },
@@ -214,13 +246,29 @@
         "rarity": "common",
         "image": "https://i.imgur.com/1234567890.png",
         "price": 60,
+        "depth-force": "shelf",
+        "fish-weight": 0,
+        "strength": 0,
+        "base-fish-catch-rate": 0,
+        "attract-type": [],
+        "attract-rarity": [],
+        "attract-weight": 0,
+        "force-event": []
+      },
+      "Filth Crown": {
+        "index": 17,
+        "description": "A rusted circlet once worn by a drowned king, crusted in barnacles and ooze",
+        "rarity": "legendary",
+        "image": "https://i.imgur.com/1234567890.png",
+        "price": 350,
         "depth-force": "",
         "fish-weight": 0,
         "strength": 0,
+        "base-fish-catch-rate": 0,
         "attract-type": [],
+        "attract-rarity": [],
         "attract-weight": 0,
-        "force-event": []
+        "force-event": [ "toxic" ]
       }
     }
   }
-  
