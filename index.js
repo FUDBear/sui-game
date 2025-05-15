@@ -653,3 +653,14 @@ async function recordCatchHistory(catchRecord) {
   // console log
   console.log(`🎣 ${catchRecord.playerId} caught ${catchRecord.catch.type}${weightSegment}`);
 }
+
+// return in-memory history
+app.get('/catch-history', (req, res) => {
+  res.json({ history: catchHistory });
+});
+
+// — or, if you’d rather serve the on-disk version: —
+app.get('/catch-history/persisted', async (req, res) => {
+  await catchDb.read();
+  res.json({ history: catchDb.data.history });
+});
