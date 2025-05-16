@@ -20,15 +20,17 @@
   <h1>SUI Game Dashboard</h1>
 
   <section>
-    <h2>Cast / Claim</h2>
+    <h2>Cast / Claim / Init</h2>
     <label for="cast-player-id">Player ID</label>
     <input type="text" id="cast-player-id" placeholder="player_..." style="width:180px;">
     <label for="cast-input">Cards (e.g. 5,3,9)</label>
     <input type="text" id="cast-input" placeholder="comma-separated" style="width:200px;">
+    <button id="btn-init">Init Player</button>
     <button id="btn-cast">Cast</button>
     <button id="btn-claim">Claim</button>
     <button id="btn-cast-all">Cast All (Random)</button>
     <button id="btn-claim-all">Claim All</button>
+    <button id="btn-refill">Refill Decks</button>
   </section>
 
   <section id="game-state">
@@ -58,7 +60,28 @@
       return res.json();
     }
 
-    // — Single Cast / Claim —
+    // — Refill Decks —
+    async function refillDecks() {
+      try {
+        const res = await fetch('/players/refill-decks', { method: 'POST' });
+        const j   = await res.json();
+        if (!j.success) return alert('Refill failed');
+        alert('Decks refilled for all players');
+        refreshState();
+      } catch (e) {
+        console.error('refillDecks error', e);
+        alert('Error contacting server');
+      }
+    }
+
+    // — Single Cast / Claim / Init —
+    async function submitInitFor(playerId) {
+      return fetch('/player/init', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ playerId })
+      });
+    }
     async function submitCastFor(playerId, cast) {
       return fetch('/playercast', {
         method: 'POST',
@@ -72,6 +95,18 @@
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ playerId })
       });
+    }
+
+    async function submitInit() {
+      const id = document.getElementById('cast-player-id').value.trim();
+      if (!id) return alert('Need player ID');
+      const res = await submitInitFor(id);
+      const j   = await res.json();
+      if (!res.ok) alert('Error: ' + j.error);
+      else alert(j.created
+        ? `Player "${id}" created with state: ${JSON.stringify(j.state)}`
+        : `Player "${id}" already exists with state: ${JSON.stringify(j.state)}`);
+      refreshState();
     }
 
     async function submitCast() {
@@ -95,8 +130,8 @@
       refreshState();
     }
 
-    // — Cast All (random 3 cards each) —
-    const MAX_CARD_INDEX = 16;  // update if you ever add more
+    // — Cast All / Claim All —
+    const MAX_CARD_INDEX = 16;
     function randomCast() {
       return Array.from({length:3}, () => Math.floor(Math.random()*(MAX_CARD_INDEX+1)));
     }
@@ -104,83 +139,60 @@
       try {
         const players = await getJSON('/players');
         for (const id of Object.keys(players)) {
-          const cast = randomCast();
-          const res  = await submitCastFor(id, cast);
-          const j    = await res.json();
-          console.log(res.ok
-            ? `✅ [${id}] cast [${cast}] queued`
-            : `❌ [${id}] cast failed: ${j.error}`
-          );
+          await submitCastFor(id, randomCast());
         }
-      } catch (e) {
-        console.error('castForAll error', e);
-        alert('Could not load players');
-      }
+      } catch (e) { alert('Could not load players'); }
       refreshState();
     }
-
-    // — Claim All —
     async function claimAll() {
       try {
-        const unclaimed = await getJSON('/unclaimed');
-        for (const c of unclaimed) {
-          const id = c.playerId;
-          const res = await submitClaimFor(id);
-          const j   = await res.json();
-          console.log(res.ok
-            ? `✅ [${id}] claimed`
-            : `❌ [${id}] claim failed: ${j.error}`
-          );
+        const list = await getJSON('/unclaimed');
+        for (const c of list) {
+          await submitClaimFor(c.playerId);
         }
-      } catch (e) {
-        console.error('claimAll error', e);
-        alert('Could not load unclaimed');
-      }
+      } catch (e) { alert('Could not load unclaimed'); }
       refreshState();
     }
 
     // — Refresh Everything —
     async function refreshState() {
       try {
-        // Phase / Event / Hour
         const { phase, event, hour } = await getJSON('/state');
         document.getElementById('state-phase').textContent = phase;
-        document.getElementById('state-event').textContent = event || 'None';
-        document.getElementById('state-hour').textContent  = hour != null ? hour : '–';
+        document.getElementById('state-event').textContent = event||'None';
+        document.getElementById('state-hour').textContent  = hour!=null?hour:'–';
 
-        // Players
         const players = await getJSON('/players');
         document.getElementById('state-players').innerHTML = Object.entries(players)
-          .map(([id,s])=>`<li>${id}: wins=${s.wins}, plays=${s.plays}</li>`).join('') ||
-          '<li><em>(no players)</em></li>';
+          .map(([id,s])=>`<li>${id}: ${JSON.stringify(s)}</li>`)
+          .join('') || '<li><em>(no players)</em></li>';
 
-        // Pending Casts
-        const casts = await getJSON('/playercasts');
+        const casts      = await getJSON('/playercasts');
+        const unclaimed  = await getJSON('/unclaimed');
+        const history    = await getJSON('/catch-history');
+
         document.getElementById('state-playercasts').innerHTML = casts
           .map(c=>`<li>${c.playerId}: [${c.cast.join(', ')}] @${new Date(c.timestamp).toLocaleTimeString()}</li>`)
           .join('') || '<li><em>(none)</em></li>';
 
-        // Unclaimed
-        const unclaimed = await getJSON('/unclaimed');
         document.getElementById('state-unclaimed').innerHTML = unclaimed
           .map(c=>`<li>${c.playerId}: ${c.catch.type} @${new Date(c.at).toLocaleTimeString()}</li>`)
           .join('') || '<li><em>(none)</em></li>';
 
-        // History
-        const history = await getJSON('/history');
-        document.getElementById('history-list').innerHTML = history
-          .map(line=>`<li>${line}</li>`).join('') ||
-          '<li><em>(none)</em></li>';
+        document.getElementById('history-list').innerHTML = history.history
+          .map(line=>`<li>${line}</li>`).join('') || '<li><em>(none)</em></li>';
       } catch (e) {
         console.error('refreshState error', e);
       }
     }
 
     // — Wire up buttons & auto-refresh —
+    document.getElementById('btn-init').onclick      = submitInit;
     document.getElementById('btn-cast').onclick      = submitCast;
     document.getElementById('btn-claim').onclick     = submitClaim;
     document.getElementById('btn-cast-all').onclick  = castForAll;
     document.getElementById('btn-claim-all').onclick = claimAll;
+    document.getElementById('btn-refill').onclick   = refillDecks;
 
     refreshState();
     setInterval(refreshState, 5000);

@@ -1,16 +1,22 @@
 {
   "players": {
-    "player_1747155911055": {
-      "wins": 3,
-      "plays": 12
-    },
-    "player_1747155912403": {
-      "wins": 0,
-      "plays": 5
-    },
-    "player_1747155912763": {
-      "wins": 0,
-      "plays": 8
+    "1Pj3GBvSkPmJAYnz2unK8t5bwMLax7cWKUWBzIPDxSZY": {
+      "activeHand": [
+        -1,
+        -1,
+        -1
+      ],
+      "hand": [
+        -1,
+        -1,
+        -1
+      ],
+      "deckCount": 0,
+      "deck": [],
+      "resetDeck": true,
+      "madness": 0,
+      "state": 1,
+      "casts": 0
     }
   }
 }

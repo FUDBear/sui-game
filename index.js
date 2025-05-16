@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { client, address, mintNFT, callRewardWinner } from './suiClient.js';
 import { db } from './db.js'
 import { fishDb } from './fishDb.js'
+import { cardsDb } from './cardsDB.js'
 import { getBonusesFromCast, applyFishWeightBonuses, applyEventBonuses, applyRarityWeightBonuses, applyBaseFishRateBonus } from './castModifiers.js';
 import cors from 'cors';
 import { Low } from 'lowdb'
@@ -58,28 +59,29 @@ app.get('/balance', async (_, res) => {
 });
 
 // POST /play → roll & call Move on win
-app.post('/play', async (_, res) => {
-  const roll = Math.floor(Math.random() * 26);
-  const win  = roll > 22;
+// app.post('/play', async (_, res) => {
+  
+//   const roll = Math.floor(Math.random() * 26);
+//   const win  = roll > 22;
 
-  if (!win) {
-    return res.json({ win: false, roll });
-  }
+//   if (!win) {
+//     return res.json({ win: false, roll });
+//   }
 
-  try {
-    const tx = await callRewardWinner();
-    res.json({
-      win: true,
-      roll,
-      txDigest: tx.digest,
-      effects: tx.effects,
-      events: tx.events,
-    });
-  } catch (err) {
-    console.error('Contract call failed:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+//   try {
+//     const tx = await callRewardWinner();
+//     res.json({
+//       win: true,
+//       roll,
+//       txDigest: tx.digest,
+//       effects: tx.effects,
+//       events: tx.events,
+//     });
+//   } catch (err) {
+//     console.error('Contract call failed:', err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
@@ -118,6 +120,42 @@ app.post('/mint', async (req, res) => {
   }
 });
 
+async function createNewPlayer(id) {
+  await db.read();
+  const defaultState = {
+    activeHand: [-1,-1,-1],
+    hand:      await generateRandomDeck(3),
+    deckCount: 20,
+    deck:      await generateRandomDeck(20),
+    resetDeck: true,
+    madness:   0,
+    state:     -1,
+    casts:     0
+  };
+  db.data.players[id] = defaultState;
+  await db.write();
+  return defaultState;
+}
+
+// POST /player/init → ensure a player exists, return their state
+app.post('/player/init', async (req, res) => {
+  const { playerId } = req.body;
+  if (!playerId) {
+    return res.status(400).json({ error: 'playerId required' });
+  }
+  await db.read();
+  const players = db.data.players;
+
+  // if they don’t exist yet, create them
+  if (!players[playerId]) {
+    const newState = await createNewPlayer(playerId);
+    return res.json({ playerId, state: newState, created: true });
+  }
+
+  // otherwise just return the existing state
+  return res.json({ playerId, state: players[playerId], created: false });
+});
+
 app.get('/players', async (req, res) => {
   await db.read();
   res.json(db.data.players);
@@ -125,18 +163,19 @@ app.get('/players', async (req, res) => {
 
 // -- DB -- //
 app.get('/player/:id', async (req, res) => {
-  await db.read()
-  const id = req.params.id
-  const players = db.data.players
+  await db.read();
+  const id = req.params.id;
+  const player = db.data.players[id];
 
-  // initialize an empty state if first time
-  if (!players[id]) {
-    players[id] = { wins: 0, plays: 0 }
-    await db.write()
+  if (!player) {
+    return res
+      .status(404)
+      .json({ error: `Player "${id}" not found.` });
   }
 
-  res.json({ id, state: players[id] })
-})
+  res.json({ id, state: player });
+});
+
 
 // Update a player's state
 app.post('/player/:id', async (req, res) => {
@@ -150,6 +189,75 @@ app.post('/player/:id', async (req, res) => {
 
   res.json({ id, state: players[id] })
 })
+
+/**
+ * POST /player/toggle-card
+ * body: { playerId: string, index: number }
+ */
+// app.post('/player/toggle-card', async (req, res) => {
+//   const { playerId, index } = req.body;
+
+//   if (!playerId || typeof index !== 'number') {
+//     return res.status(400).json({ error: 'playerId and numeric index required' });
+//   }
+
+//   // load latest
+//   await db.read();
+//   const player = db.data.players[playerId];
+//   if (!player) {
+//     return res.status(404).json({ error: `Player "${playerId}" not found` });
+//   }
+
+//   // bounds check
+//   if (index < 0 || index >= player.hand.length) {
+//     return res.status(400).json({ error: `Index must be between 0 and ${player.hand.length - 1}` });
+//   }
+
+//   // toggle logic
+//   const current = player.activeHand[index];
+//   if (current > -1) {
+//     // already active → deactivate
+//     player.activeHand[index] = -1;
+//   } else {
+//     // inactive → activate from the hand array
+//     player.activeHand[index] = player.hand[index];
+//   }
+
+//   // persist and respond
+//   await db.write();
+//   res.json({ playerId, activeHand: player.activeHand, hand: player.hand });
+// });
+
+/**
+ * POST /players/refill-decks
+ * Re‐deals every player:
+ *  • a fresh 20‐card `deck`
+ *  • a fresh  3‐card `hand`
+ */
+app.post('/players/refill-decks', async (req, res) => {
+  // 1) Reload card pool & players DB
+  await cardsDb.read();
+  await db.read();
+
+  const players = db.data.players;
+  for (const playerId of Object.keys(players)) {
+    // brand-new deck of 20
+    const newDeck = await generateRandomDeck(20);
+    players[playerId].deck      = newDeck;
+    players[playerId].deckCount = newDeck.length;
+
+    // brand-new hand of 3
+    const newHand = await generateRandomDeck(3);
+    players[playerId].hand = newHand;
+  }
+
+  // 2) Persist in one shot
+  await db.write();
+
+  // 3) Return updated map
+  res.json({ success: true, players });
+});
+
 
 // --- New Fish routes ---
 
@@ -166,6 +274,27 @@ app.get('/fish/:type', async (req, res) => {
   if (!f) return res.status(404).send()
   res.json({ type: req.params.type, stats: f })
 })
+
+/**
+ * Build a random deck of `size` card‐indices based on your cards.json
+ */
+async function generateRandomDeck(size = 20) {
+  // re-read to get the latest data
+  await cardsDb.read();
+
+  // cardsDb.data.cards is an object: name → cardData
+  const cardList = Object.values(cardsDb.data.cards);
+
+  const deck = [];
+  for (let i = 0; i < size; i++) {
+    // pick a random card object
+    const randomCard = 
+      cardList[Math.floor(Math.random() * cardList.length)];
+    // push its `index` field
+    deck.push(randomCard.index);
+  }
+  return deck;
+}
 
 /**
  * Roll a random weight (and length) for a caught fish,
@@ -212,70 +341,105 @@ function playercast(castArray) {
   });
 }
 
-app.post('/playercast', (req, res) => {
-  try {
-    const { playerId, cast } = req.body;
+app.post('/playercast', async (req, res) => {
+  const { playerId, cast } = req.body;
 
-    // 0) Basic validation
-    if (!playerId || !Array.isArray(cast)) {
-      return res.status(400).json({ error: 'playerId and cast[] required' });
-    }
-
-    // 1) Prevent duplicate pending casts
-    if (playerCasts.some(c => c.playerId === playerId)) {
-      return res
-        .status(400)
-        .json({ error: 'You already have a pending cast. Wait for that to process.' });
-    }
-
-    // 2) Prevent new cast if you haven’t claimed your last catch
-    if (unclaimedCatches.some(c => c.playerId === playerId)) {
-      return res
-        .status(400)
-        .json({ error: 'Claim your previous catch before casting again.' });
-    }
-
-    // 3) Compute card-based bonuses from the cast indices
-    const bonuses = getBonusesFromCast(cast);
-
-    // 4) Apply any forced depth override from cards
-    const force = bonuses.find(b => b.type === 'forceDepth');
-    const depth = force ? force.depth : pickDepth();
-
-    console.log(
-      `🎯 New cast by ${playerId}: depth="${depth}", cast=[${cast.join(', ')}], bonuses=`,
-      bonuses
-    );
-
-    // 5) Queue the cast record
-    playerCasts.push({
-      playerId,
-      cast,
-      depth,
-      bonuses,
-      timestamp: new Date().toISOString(),
-    });
-
-    // 6) All good!
-    return res.json({ success: true });
-
-  } catch (err) {
-    console.error('Error in /playercast:', err);
-    return res.status(500).json({ error: err.message });
+  // 0) Basic validation
+  if (!playerId || !Array.isArray(cast)) {
+    return res.status(400).json({ error: 'playerId and cast[] required' });
   }
+
+  // 0.5) Ensure the player exists
+  await db.read();
+  const player = db.data.players[playerId];
+  if (!player) {
+    return res.status(400).json({ error: `Player "${playerId}" not found.` });
+  }
+
+  // 0.75) Verify cast matches hand
+  if (cast.length !== player.hand.length) {
+    return res.status(400).json({ error: `Cast length must be ${player.hand.length}` });
+  }
+  for (let i = 0; i < cast.length; i++) {
+    if (cast[i] > -1 && cast[i] !== player.hand[i]) {
+      return res
+        .status(400)
+        .json({ error: `Slot ${i} must be ${player.hand[i]}, got ${cast[i]}` });
+    }
+  }
+
+  // 1) Prevent duplicate pending casts
+  if (playerCasts.some(c => c.playerId === playerId)) {
+    return res.status(400).json({ error: 'You already have a pending cast.' });
+  }
+
+  // 2) Prevent new cast if unclaimed still exist
+  if (unclaimedCatches.some(c => c.playerId === playerId)) {
+    return res.status(400).json({ error: 'Claim your previous catch first.' });
+  }
+
+  // 3) Queue the cast
+  const bonuses = getBonusesFromCast(cast);
+  const record = {
+    playerId,
+    cast,
+    depth: pickDepth(),
+    bonuses,
+    timestamp: new Date().toISOString(),
+  };
+  playerCasts.push(record);
+
+  // 4) Draw replacements for each used card
+  for (let i = 0; i < cast.length; i++) {
+    if (cast[i] > -1) {
+      if (player.deck.length > 0) {
+        const drawPos   = Math.floor(Math.random() * player.deck.length);
+        const [newCard] = player.deck.splice(drawPos, 1);
+        player.hand[i]  = newCard;
+      } else {
+        // no more cards in deck → clear that slot
+        player.hand[i] = -1;
+      }
+    }
+  }
+  // update deckCount
+  player.deckCount = player.deck.length;
+
+  // 5) Flip state → 2, persist, etc.
+  player.state = 2;
+  await db.write();
+
+  return res.json({
+    success:   true,
+    newHand:   player.hand,
+    deckCount: player.deckCount
+  });
 });
 
 
 
-app.post('/claim', (req, res) => {
+app.post('/claim', async (req, res) => {
   const { playerId } = req.body;
-  if (!playerId) return res.status(400).json({ error: 'playerId required' });
-  const idx = unclaimedCatches.findIndex(c => c.playerId === playerId);
-  if (idx < 0) return res.status(404).json({ error: 'No unclaimed catch' });
-  const [claimed] = unclaimedCatches.splice(idx, 1);
-  res.json({ success: true, claimed });
-});
+  if (!playerId) {
+    return res.status(400).json({ error: 'playerId required' });
+  }
 
+  // find and remove from unclaimedCatches
+  const idx = unclaimedCatches.findIndex(c => c.playerId === playerId);
+  if (idx < 0) {
+    return res.status(404).json({ error: 'No unclaimed catch' });
+  }
+  const [claimed] = unclaimedCatches.splice(idx, 1);
+
+  // update player state → 1
+  await db.read();
+  if (db.data.players[playerId]) {
+    db.data.players[playerId].state = 1;
+    await db.write();
+  }
+
+  return res.json({ success: true, claimed });
+});
 
 
 // GET /playercasts → returns the full array
@@ -402,6 +566,13 @@ async function gameLoop() {
     unclaimedCatches.push(catchRecord);
 
     await recordCatchHistory(catchRecord);
+
+      // mark player as “has a catch to claim”
+      await db.read();
+      if (db.data.players[rec.playerId]) {
+        db.data.players[rec.playerId].state = 3;
+        await db.write();
+      }
   }
 
   // 6) only *now* update lastEvent for the next loop
@@ -415,6 +586,19 @@ async function gameLoop() {
     currentPhaseIndex = newPhaseIndex;
     lastPhase = phases[currentPhaseIndex];
     console.log(`⏩ Phase: ${oldPhase} → ${lastPhase}`);
+  }
+
+   // ✨ when we wrap back to hour 0, reset every player’s deck
+   if (currentHour === 0) {
+    console.log('🌑 It’s dawn—resetting all player decks');
+    await cardsDb.read();
+    await db.read();
+    for (const playerId of Object.keys(db.data.players)) {
+      const newDeck = await generateRandomDeck(20);
+      db.data.players[playerId].deck      = newDeck;
+      db.data.players[playerId].deckCount = newDeck.length;
+    }
+    await db.write();
   }
 
   console.log(`✅ gameLoop complete\n--------------------------------\n`);
@@ -550,19 +734,30 @@ app.get('/state', (req, res) => {
   });
 });
 
-app.post('/playercast', (req, res) => {
+app.post('/playercast', async (req, res) => {
   const { playerId, cast, cards = [] } = req.body;
 
+  // 0) Basic validation
   if (!playerId || !Array.isArray(cast)) {
     return res.status(400).json({ error: 'playerId and cast[] required' });
   }
+
+  // 0.5) Ensure the player has been initialized in your LowDB
+  await db.read();
+  if (!db.data.players[playerId]) {
+    return res
+      .status(400)
+      .json({ error: `Player "${playerId}" not found. Please init first.` });
+  }
+
   // 1) Prevent duplicate pending casts
   if (playerCasts.some(c => c.playerId === playerId)) {
     return res
       .status(400)
       .json({ error: 'You already have a pending cast. Wait for that to process.' });
   }
-  // 2) Prevent new cast if you haven't claimed your last catch
+
+  // 2) Prevent new cast if you haven’t claimed your last catch
   if (unclaimedCatches.some(c => c.playerId === playerId)) {
     return res
       .status(400)
@@ -570,19 +765,20 @@ app.post('/playercast', (req, res) => {
   }
 
   // 3) Build the cast record with depth + card-based bonuses
-  const bonuses = getBonusesFromCards(cards);
+  const bonuses = getBonusesFromCast(cards);
   const record = {
     playerId,
     cast,
     depth: pickDepth(),
-    cards,       // e.g. ['Grub Cluster','Blood Grub Cluster']
-    bonuses,     // array of {type:'forceDepth',…} and/or {type:'fishWeight',…}
+    cards,
+    bonuses,
     timestamp: new Date().toISOString(),
   };
 
   playerCasts.push(record);
-  res.json({ success: true });
+  return res.json({ success: true });
 });
+
 
 function isFishCurrentlyActive(stats, phase, chosenEvent) {
   // 1) must feed during this phase
