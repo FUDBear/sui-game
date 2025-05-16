@@ -654,6 +654,10 @@ async function recordCatchHistory(catchRecord) {
   console.log(`🎣 ${catchRecord.playerId} caught ${catchRecord.catch.type}${weightSegment}`);
 }
 
+app.get('/time', (req, res) => {
+  res.json({ hour: currentHour });
+});
+
 // return in-memory history
 app.get('/catch-history', (req, res) => {
   res.json({ history: catchHistory });
