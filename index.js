@@ -130,7 +130,8 @@ async function createNewPlayer(id) {
     resetDeck: true,
     madness:   0,
     state:     -1,
-    casts:     0
+    casts:     0,
+    catch:     null
   };
   db.data.players[id] = defaultState;
   await db.write();
@@ -189,6 +190,25 @@ app.post('/player/:id', async (req, res) => {
 
   res.json({ id, state: players[id] })
 })
+
+/**
+ * GET /player-info/:playerId
+ * Returns the full player object (hand, deck, state, etc.)
+ */
+app.get('/player-info/:playerId', async (req, res) => {
+  const { playerId } = req.params;
+  if (!playerId) {
+    return res.status(400).json({ error: 'playerId required' });
+  }
+
+  await db.read();
+  const player = db.data.players[playerId];
+  if (!player) {
+    return res.status(404).json({ error: `Player "${playerId}" not found.` });
+  }
+
+  return res.json({ playerId, ...player });
+});
 
 /**
  * POST /player/toggle-card
@@ -417,24 +437,25 @@ app.post('/playercast', async (req, res) => {
 });
 
 
-
 app.post('/claim', async (req, res) => {
   const { playerId } = req.body;
   if (!playerId) {
     return res.status(400).json({ error: 'playerId required' });
   }
 
-  // find and remove from unclaimedCatches
+  // find and remove from in-memory unclaimedCatches
   const idx = unclaimedCatches.findIndex(c => c.playerId === playerId);
   if (idx < 0) {
     return res.status(404).json({ error: 'No unclaimed catch' });
   }
   const [claimed] = unclaimedCatches.splice(idx, 1);
 
-  // update player state → 1
+  // update player record: reset state → 1 and remove the saved catch
   await db.read();
-  if (db.data.players[playerId]) {
-    db.data.players[playerId].state = 1;
+  const player = db.data.players[playerId];
+  if (player) {
+    player.state = 1;
+    delete player.catch;
     await db.write();
   }
 
@@ -571,6 +592,12 @@ async function gameLoop() {
       await db.read();
       if (db.data.players[rec.playerId]) {
         db.data.players[rec.playerId].state = 3;
+        db.data.players[rec.playerId].catch = {
+          type:   catchRecord.catch.type,
+          at:     catchRecord.at,
+          weight: catchRecord.weight,
+          length: catchRecord.length
+        }; // Cache catch
         await db.write();
       }
   }
@@ -590,14 +617,29 @@ async function gameLoop() {
 
    // ✨ when we wrap back to hour 0, reset every player’s deck
    if (currentHour === 0) {
-    console.log('🌑 It’s dawn—resetting all player decks');
+    console.log('🌑 It’s dawn—resetting all player decks and hands');
     await cardsDb.read();
     await db.read();
+
     for (const playerId of Object.keys(db.data.players)) {
+      const player = db.data.players[playerId];
+
+      // brand-new deck of 20
       const newDeck = await generateRandomDeck(20);
-      db.data.players[playerId].deck      = newDeck;
-      db.data.players[playerId].deckCount = newDeck.length;
+      player.deck      = newDeck;
+      player.deckCount = newDeck.length;
+
+      // brand-new hand of 3
+      const newHand = await generateRandomDeck(3);
+      player.hand = newHand;
+
+      // reset their activeHand slots
+      player.activeHand = [-1, -1, -1];
+
+      // optionally reset state back to “can cast” (1)
+      player.state = 1;
     }
+
     await db.write();
   }
 
