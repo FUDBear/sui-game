@@ -633,11 +633,11 @@ async function gameLoop() {
       const newHand = await generateRandomDeck(3);
       player.hand = newHand;
 
-      // reset their activeHand slots
-      player.activeHand = [-1, -1, -1];
+      // // reset their activeHand slots
+      // player.activeHand = [-1, -1, -1];
 
-      // optionally reset state back to “can cast” (1)
-      player.state = 1;
+      // // optionally reset state back to “can cast” (1)
+      // player.state = 1;
     }
 
     await db.write();
