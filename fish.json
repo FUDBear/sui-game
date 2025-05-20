@@ -449,51 +449,6 @@
       "catch-reward": 2,
       "feed-hours": ["dawn", "day", "dusk", "night"],
       "base-catch-rate": 60
-    },
-    "Empty Bottle": {
-      "strength": 0, 
-      "min-weight": 0, 
-      "max-weight": 0, 
-      "min-length": 0, 
-      "max-length": 0, 
-      "rarity": "junk",
-      "depths" : ["dropoff", "canyon" ],
-      "only-active-events": [],
-      "base-image": "-",
-      "event-variations": [],
-      "catch-reward": 5,
-      "feed-hours": ["dawn", "day", "dusk", "night"],
-      "base-catch-rate": 40
-    },
-    "Bitterfin": {
-      "strength": 10.7, 
-      "min-weight": 3, 
-      "max-weight": 4.5, 
-      "min-length": 13, 
-      "max-length": 15, 
-      "rarity": "uncommon",
-      "depths" : ["shoals"],
-      "only-active-events": [],
-      "base-image": "-",
-      "event-variations": [],
-      "catch-reward": 9,
-      "feed-hours": [],
-      "base-catch-rate": 50
-    },
-    "Tidehunter": {
-      "strength": 18.1, 
-      "min-weight": 13.5, 
-      "max-weight": 16.0, 
-      "min-length": 13, 
-      "max-length": 16,
-      "rarity": "rare",
-      "depths" : ["shoals"],
-      "only-active-events": [],
-      "base-image": "-",
-      "event-variations": [],
-      "catch-reward": 20,
-      "feed-hours": [],
-      "base-catch-rate": 50
     }
   }
 }

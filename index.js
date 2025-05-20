@@ -776,50 +776,50 @@ app.get('/state', (req, res) => {
   });
 });
 
-app.post('/playercast', async (req, res) => {
-  const { playerId, cast, cards = [] } = req.body;
+// app.post('/playercast', async (req, res) => {
+//   const { playerId, cast, cards = [] } = req.body;
 
-  // 0) Basic validation
-  if (!playerId || !Array.isArray(cast)) {
-    return res.status(400).json({ error: 'playerId and cast[] required' });
-  }
+//   // 0) Basic validation
+//   if (!playerId || !Array.isArray(cast)) {
+//     return res.status(400).json({ error: 'playerId and cast[] required' });
+//   }
 
-  // 0.5) Ensure the player has been initialized in your LowDB
-  await db.read();
-  if (!db.data.players[playerId]) {
-    return res
-      .status(400)
-      .json({ error: `Player "${playerId}" not found. Please init first.` });
-  }
+//   // 0.5) Ensure the player has been initialized in your LowDB
+//   await db.read();
+//   if (!db.data.players[playerId]) {
+//     return res
+//       .status(400)
+//       .json({ error: `Player "${playerId}" not found. Please init first.` });
+//   }
 
-  // 1) Prevent duplicate pending casts
-  if (playerCasts.some(c => c.playerId === playerId)) {
-    return res
-      .status(400)
-      .json({ error: 'You already have a pending cast. Wait for that to process.' });
-  }
+//   // 1) Prevent duplicate pending casts
+//   if (playerCasts.some(c => c.playerId === playerId)) {
+//     return res
+//       .status(400)
+//       .json({ error: 'You already have a pending cast. Wait for that to process.' });
+//   }
 
-  // 2) Prevent new cast if you haven’t claimed your last catch
-  if (unclaimedCatches.some(c => c.playerId === playerId)) {
-    return res
-      .status(400)
-      .json({ error: 'Claim your previous catch before casting again.' });
-  }
+//   // 2) Prevent new cast if you haven’t claimed your last catch
+//   if (unclaimedCatches.some(c => c.playerId === playerId)) {
+//     return res
+//       .status(400)
+//       .json({ error: 'Claim your previous catch before casting again.' });
+//   }
 
-  // 3) Build the cast record with depth + card-based bonuses
-  const bonuses = getBonusesFromCast(cards);
-  const record = {
-    playerId,
-    cast,
-    depth: pickDepth(),
-    cards,
-    bonuses,
-    timestamp: new Date().toISOString(),
-  };
+//   // 3) Build the cast record with depth + card-based bonuses
+//   const bonuses = getBonusesFromCast(cards);
+//   const record = {
+//     playerId,
+//     cast,
+//     depth: pickDepth(),
+//     cards,
+//     bonuses,
+//     timestamp: new Date().toISOString(),
+//   };
 
-  playerCasts.push(record);
-  return res.json({ success: true });
-});
+//   playerCasts.push(record);
+//   return res.json({ success: true });
+// });
 
 
 function isFishCurrentlyActive(stats, phase, chosenEvent) {
