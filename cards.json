@@ -1,7 +1,7 @@
 {
     "cards": {
       "Used Hook": {
-        "index": 0,
+        "index": 7,
         "description": "A lightly worn fishing hook, still sharp enough for common catches.",
         "rarity": "common",
         "image": "https://i.imgur.com/1234567890.png",
@@ -16,7 +16,7 @@
         "force-event": []
       },
       "Rusty Prong": {
-        "index": 1,
+        "index": 8,
         "description": "An old, rusted hook prong that sacrifices durability for a bargain price.",
         "rarity": "common",
         "image": "https://i.imgur.com/1234567890.png",
@@ -31,7 +31,7 @@
         "force-event": []
       },
       "Grub Cluster": {
-        "index": 2,
+        "index": 9,
         "description": "A handful of wriggling grubs bound together to attract mid‐level fish.",
         "rarity": "uncommon",
         "image": "https://i.imgur.com/1234567890.png",
@@ -46,7 +46,7 @@
         "force-event": []
       },
       "Blood Grub Cluster": {
-        "index": 3,
+        "index": 10,
         "description": "Grubs soaked in a drop of blood, irresistible to predatory species.",
         "rarity": "rare",
         "image": "https://i.imgur.com/1234567890.png",
@@ -61,7 +61,7 @@
         "force-event": []
       },
       "Leach Ball": {
-        "index": 4,
+        "index": 11,
         "description": "A compact ball of leeches that wriggle enticingly beneath the surface.",
         "rarity": "rare",
         "image": "https://i.imgur.com/1234567890.png",
@@ -76,7 +76,7 @@
         "force-event": []
       },
       "Bone Shard Jig": {
-        "index": 5,
+        "index": 12,
         "description": "A jig fashioned from sharp bone shards, ideal for tougher catches.",
         "rarity": "legendary",
         "image": "https://i.imgur.com/1234567890.png",
@@ -91,7 +91,7 @@
         "force-event": []
       },
       "Shadow-Silk Spinner": {
-        "index": 6,
+        "index": 13,
         "description": "A spinner woven from shadow silk that glints eerily in low light.",
         "rarity": "epic",
         "image": "https://i.imgur.com/1234567890.png",
@@ -106,7 +106,7 @@
         "force-event": []
       },
       "Ember-Silk Spinner": {
-        "index": 7,
+        "index": 14,
         "description": "A fiery spinner that flickers like embers when reeled in.",
         "rarity": "epic",
         "image": "https://i.imgur.com/1234567890.png",
@@ -121,7 +121,7 @@
         "force-event": []
       },
       "None": {
-        "index": 8,
+        "index": -1,
         "description": "No card selected.",
         "rarity": "junk",
         "image": "https://i.imgur.com/1234567890.png",
@@ -136,7 +136,7 @@
         "force-event": []
       },
       "Tri-Skull": {
-        "index": 9,
+        "index": 0,
         "description": "A sinister lure adorned with three tiny skulls, feared by fish folk.",
         "rarity": "rare",
         "image": "https://i.imgur.com/1234567890.png",
@@ -151,7 +151,7 @@
         "force-event": [ "nightmare" ]
       },
       "Fresh Chum": {
-        "index": 10,
+        "index": 15,
         "description": "Freshly minced bait that trails a pungent scent through the water.",
         "rarity": "uncommon",
         "image": "https://i.imgur.com/1234567890.png",
@@ -166,7 +166,7 @@
         "force-event": []
       },
       "Frozen Mirror": {
-        "index": 11,
+        "index": 1,
         "description": "A mirror‐like lure glazed with ice, ideal for cold‐water predators.",
         "rarity": "legendary",
         "image": "https://i.imgur.com/1234567890.png",
@@ -181,7 +181,7 @@
         "force-event": [ "frozen" ]
       },
       "Blood Vial": {
-        "index": 12,
+        "index": 2,
         "description": "A vial of potent blood bait, used only by the most daring anglers.",
         "rarity": "legendary",
         "image": "https://i.imgur.com/1234567890.png",
@@ -196,7 +196,7 @@
         "force-event": [ "blood" ]
       },
       "Barbed Sinker": {
-        "index": 13,
+        "index": 3,
         "description": "A heavy sinker with barbs, ensures your bait stays secured deep.",
         "rarity": "common",
         "image": "https://i.imgur.com/1234567890.png",
@@ -211,7 +211,7 @@
         "force-event": []
       },
       "Golf Sinker": {
-        "index": 14,
+        "index": 4,
         "description": "A smooth, spherical sinker designed for precise casts.",
         "rarity": "uncommon",
         "image": "https://i.imgur.com/1234567890.png",
@@ -226,7 +226,7 @@
         "force-event": []
       },
       "Small Sinker": {
-        "index": 15,
+        "index": 5,
         "description": "A lightweight sinker for shallow or gentle currents.",
         "rarity": "common",
         "image": "https://i.imgur.com/1234567890.png",
@@ -241,6 +241,21 @@
         "force-event": []
       },
       "Tiny Sinker": {
+        "index": 6,
+        "description": "A minuscule sinker perfect for subtle, finesse presentations.",
+        "rarity": "common",
+        "image": "https://i.imgur.com/1234567890.png",
+        "price": 60,
+        "depth-force": "shelf",
+        "fish-weight": 0,
+        "strength": 0,
+        "base-fish-catch-rate": 0,
+        "attract-type": [],
+        "attract-rarity": [],
+        "attract-weight": 0,
+        "force-event": []
+      },
+      "Ooze Line": {
         "index": 16,
         "description": "A minuscule sinker perfect for subtle, finesse presentations.",
         "rarity": "common",
@@ -255,8 +270,23 @@
         "attract-weight": 0,
         "force-event": []
       },
-      "Filth Crown": {
+      "Fishing Line": {
         "index": 17,
+        "description": "A minuscule sinker perfect for subtle, finesse presentations.",
+        "rarity": "common",
+        "image": "https://i.imgur.com/1234567890.png",
+        "price": 60,
+        "depth-force": "shelf",
+        "fish-weight": 0,
+        "strength": 0,
+        "base-fish-catch-rate": 0,
+        "attract-type": [],
+        "attract-rarity": [],
+        "attract-weight": 0,
+        "force-event": []
+      },
+      "Filth Crown": {
+        "index": 18,
         "description": "A rusted circlet once worn by a drowned king, crusted in barnacles and ooze",
         "rarity": "legendary",
         "image": "https://i.imgur.com/1234567890.png",
