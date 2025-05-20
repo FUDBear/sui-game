@@ -120,21 +120,6 @@
         "attract-weight": 100,
         "force-event": []
       },
-      "None": {
-        "index": -1,
-        "description": "No card selected.",
-        "rarity": "junk",
-        "image": "https://i.imgur.com/1234567890.png",
-        "price": 1,
-        "depth-force": "",
-        "fish-weight": 0,
-        "strength": 0,
-        "base-fish-catch-rate": 0,
-        "attract-type": [],
-        "attract-rarity": [],
-        "attract-weight": 0,
-        "force-event": []
-      },
       "Tri-Skull": {
         "index": 0,
         "description": "A sinister lure adorned with three tiny skulls, feared by fish folk.",
