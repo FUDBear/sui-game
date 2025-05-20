@@ -129,7 +129,7 @@ async function createNewPlayer(id) {
     deck:      await generateRandomDeck(20),
     resetDeck: true,
     madness:   0,
-    state:     -1,
+    state:     1,
     casts:     0,
     catch:     null
   };
