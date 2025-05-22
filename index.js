@@ -22,6 +22,11 @@ const fishCatchesData = [];
 dotenv.config();
 
 /**
+ * Mint a random, non-junk fish NFT using its `base-image` hash.
+ * @returns {Promise<{ type: string; digest: string; objectChanges: any[] }>}
+ */
+
+/**
  * Print a breakdown to the console, color-coded by rarity.
  * @param {Record<string, number>} breakdown  // fishType → count
  * @param {Record<string, any>} fishIndex     // fishDb.data.fish map
@@ -93,6 +98,22 @@ app.post('/mint', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.post('/mint-fish', async (_req, res) => {
+  try {
+    const { type, digest, objectChanges } = await mintRandomFishNFT();
+    res.json({
+      success:       true,
+      fishType:      type,
+      digest,
+      objectChanges,
+    });
+  } catch (err) {
+    console.error('Random fish minting failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 async function createNewPlayer(id) {
   await db.read();
@@ -865,3 +886,41 @@ app.get('/fish-catches/:playerId', (req, res) => {
   const matches = fishCatchesData.filter(c => c.playerId === playerId);
   res.json(matches);
 });
+
+async function mintRandomFishNFT() {
+  // 1) load the latest fish data
+  await fishDb.read();
+  const fishEntries = Object.entries(fishDb.data.fish)
+    // keep only fish with a usable base-image hash
+    .filter(([, stats]) => {
+      const h = stats['base-image'];
+      return typeof h === 'string' && h !== '-' && h.length > 0;
+    });
+  
+  if (fishEntries.length === 0) {
+    throw new Error('No mintable fish found');
+  }
+
+  // 2) pick one at random
+  const [type, stats] = fishEntries[Math.floor(Math.random() * fishEntries.length)];
+  const hash          = stats['base-image'];
+  const imageUrl      = `https://walrus.tusky.io/${hash}`;
+  const thumbnailUrl  = imageUrl;        // or point at a smaller thumb
+
+  // 3) build a nice description
+  const description = `A freshly minted ${type} from the SUI fishing game`;
+
+  // 4) mint it
+  const result = await mintNFT({
+    name:        type,
+    description,
+    imageUrl,
+    thumbnailUrl,
+  });
+
+  return {
+    type,
+    digest:        result.digest,
+    objectChanges: result.objectChanges,
+  };
+}

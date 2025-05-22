@@ -53,6 +53,8 @@
 
     <h3>Fish Catches</h3>
     <ul id="state-fish-catches"><li><em>loading…</em></li></ul>
+    
+    <button id="btn-mint-fish">Mint Random Fish NFT</button>
 
   </section>
 
@@ -206,6 +208,45 @@
       }
     }
 
+    async function mintRandomFish() {
+      try {
+        // 1) grab the full fish list
+        const allFish = await getJSON('/fish');
+        const types   = Object.keys(allFish);
+
+        // 2) pick a random fish that actually has a hash
+        let choice, stats;
+        do {
+          choice = types[Math.floor(Math.random() * types.length)];
+          stats  = allFish[choice];
+        } while (!stats['base-image'] || stats['base-image'] === '-');
+
+        // 3) build your image URL
+        const hash = stats['base-image'];
+        const url  = 'https://walrus.tusky.io/' + hash;
+
+        // 4) call your mint-fish endpoint
+        const payload = {
+          name:        choice,
+          description: `An on-chain NFT of your ${choice}`,
+          imageUrl:    url,
+          thumbnailUrl:url
+        };
+        const res = await fetch('/mint-fish', {
+          method:  'POST',
+          headers: {'Content-Type':'application/json'},
+          body:    JSON.stringify(payload),
+        });
+        const j = await res.json();
+        if (!j.success) throw new Error(j.error || 'mint failed');
+
+        alert(`🎉 Minted “${j.name}”!\nTransaction digest: ${j.digest}`);
+      } catch (err) {
+        console.error('mintRandomFish error', err);
+        alert('Failed to mint NFT: ' + err.message);
+      }
+    }
+
     // — Wire up buttons & auto-refresh —
     document.getElementById('btn-init').onclick      = submitInit;
     document.getElementById('btn-cast').onclick      = submitCast;
@@ -213,6 +254,7 @@
     document.getElementById('btn-cast-all').onclick  = castForAll;
     document.getElementById('btn-claim-all').onclick = claimAll;
     document.getElementById('btn-refill').onclick   = refillDecks;
+    document.getElementById('btn-mint-fish').onclick = mintRandomFish;
 
     refreshState();
     setInterval(refreshState, 5000);
