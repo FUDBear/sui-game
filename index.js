@@ -1,13 +1,25 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import cors from 'cors';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import fetch from 'node-fetch';
+import sharp from 'sharp';
+import tus from 'tus-js-client';
+
 import { client, address, mintNFT, callRewardWinner } from './suiClient.js';
 import { db } from './db.js'
 import { fishDb } from './fishDb.js'
 import { cardsDb } from './cardsDB.js'
 import { getBonusesFromCast, applyFishWeightBonuses, applyEventBonuses, applyRarityWeightBonuses, applyBaseFishRateBonus } from './castModifiers.js';
-import cors from 'cors';
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
+import { fileURLToPath } from 'url';
+
+const app = express();
+dotenv.config();
+
 
 // ——— set up persistent catchHistory DB ———
 const catchFile = path.join(process.cwd(), 'catchHistory.json')
@@ -19,7 +31,275 @@ catchDb.data ||= { history: [] }
 // ─── in-memory store only for non-junk catches ───
 const fishCatchesData = [];
 
-dotenv.config();
+const PORT = process.env.PORT || 3000;
+app.use(express.json());
+app.use(cors());
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.use(express.static(path.join(__dirname, 'public')));
+
+
+const TUSKY_API_KEY    = process.env.TUSKY_API_KEY;
+const TUSKY_VAULT_ID   = process.env.TUSKY_VAULT_ID;
+const BACKGROUND_HASH = 'y_jdrf54mgy2jSI4a6pLxOMPAl1MVcsoVX-1X_ps';
+const FISH_JSON       = path.join(process.cwd(), 'fish.json');
+
+const BACKGROUND_FILE_ID = '52d47e9a-9352-4df0-bc67-957aaa56b6d2';
+
+// async function uploadToTuskyUsingTus(filePath) {
+//   const stats      = fs.statSync(filePath);
+//   const fileStream = fs.createReadStream(filePath);
+//   const fileName   = path.basename(filePath);
+
+//   return new Promise((resolve, reject) => {
+//     const upload = new tus.Upload(fileStream, {
+//       // Tus endpoint with vaultId query
+//       endpoint: `https://api.tusky.io/uploads?vaultId=${TUSKY_VAULT_ID}`,
+//       uploadSize: stats.size,
+//       headers: {
+//         'Api-Key': TUSKY_API_KEY,
+//       },
+//       metadata: {
+//         filename: fileName,
+//         // tus-js-client will translate this into base64-encoded metadata,
+//         // but tus.io servers read it fine.
+//         filetype: 'image/png',
+//         vaultId:  TUSKY_VAULT_ID,
+//       },
+//       onError: err => {
+//         console.error('Tusky upload failed:', err);
+//         reject(err);
+//       },
+//       onProgress: (bytesUploaded, bytesTotal) => {
+//         const pct = ((bytesUploaded/bytesTotal)*100).toFixed(2);
+//         console.log(`Tusky upload ${fileName}: ${pct}%`);
+//       },
+//       onSuccess: () => {
+//         // upload.url is something like
+//         // https://api.tusky.io/uploads/{uploadId}
+//         const url    = upload.url;
+//         const blobId = url.split('/').pop();
+//         console.log(`Tusky upload complete, blobId=${blobId}`);
+//         resolve(blobId);
+//       }
+//     });
+
+//     upload.start();
+//   });
+// }
+
+
+app.get('/tusky/:fileId', async (req, res) => {
+  const { fileId } = req.params;
+  console.log(`=== proxy /tusky/${fileId} ===`);
+  const tuskyUrl = `https://api.tusky.io/files/${fileId}/data`;
+  const tos      = await fetch(tuskyUrl, {
+    headers: { 'Api-Key': process.env.TUSKY_API_KEY }
+  });
+  if (!tos.ok) {
+    console.error(`Tusky proxy error: ${tos.status} ${tos.statusText}`);
+    return res.status(tos.status).send(tos.statusText);
+  }
+  const buf = Buffer.from(await tos.arrayBuffer());
+  console.log(`✅  proxied ${buf.length} bytes from Tusky/${fileId}`);
+  res.type(tos.headers.get('Content-Type') || 'application/octet-stream');
+  res.send(buf);
+});
+
+async function waitForBlobId(uploadId, maxAttempts = 15, delayMs = 2000) {
+  for (let i = 0; i < maxAttempts; i++) {
+    console.log(`🔍 polling /files/${uploadId} for blobId (attempt ${i+1}/${maxAttempts})…`);
+    const res = await fetch(`https://api.tusky.io/files/${uploadId}`, {
+      headers: { 'Api-Key': TUSKY_API_KEY }
+    });
+    if (!res.ok) {
+      throw new Error(`Tusky file-info fetch failed: ${res.statusText}`);
+    }
+    const info = await res.json();
+    console.log('🗂️ file metadata:', info);
+    if (info.blobId && info.blobId !== 'unknown') {
+      console.log(`✅ got real blobId=${info.blobId}`);
+      return info.blobId;
+    }
+    await new Promise(r => setTimeout(r, delayMs));
+  }
+  throw new Error(`Timed out waiting for blobId after ${maxAttempts} attempts`);
+}
+
+const PROXY_BASE = `http://localhost:${PORT}`;
+
+async function fetchViaProxy(fileId) {
+  console.log(`➡️  proxy fetching tusky blob ${fileId}`);
+  const url = `http://localhost:${PORT}/tusky/${fileId}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Proxy download failed (${res.status}): ${res.statusText}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  console.log(`✅  got ${buf.length} bytes from proxy/${fileId}`);
+  return buf;
+}
+
+async function fetchBlob(hash) {
+  console.log(`➡️  fetching blob from Walrus ${hash}`);
+  const url = `https://walrus.tusky.io/${hash}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch blob ${hash}: ${res.statusText}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  console.log(`✅  got ${buf.length} bytes from Walrus/${hash}`);
+  return buf;
+}
+
+async function composeFishImage(fishHash) {
+  console.log(`🎨 composing image layers for fishHash=${fishHash}`);
+
+  // 1️⃣ pull the fish sprite *directly* from Walrus
+  console.log(`➡️  fetching fish from Walrus CDN: ${fishHash}`);
+  const fishResp = await fetch(`https://walrus.tusky.io/${fishHash}`);
+  if (!fishResp.ok) throw new Error(`Failed to fetch fish layer: ${fishResp.statusText}`);
+  const fishBuf = Buffer.from(await fishResp.arrayBuffer());
+  console.log(`✅  got ${fishBuf.length} bytes from Walrus/${fishHash}`);
+
+  // 2️⃣ pull the background via your working proxy
+  console.log(`➡️  proxy fetching background via /tusky/${BACKGROUND_FILE_ID}`);
+  const bgResp = await fetch(`http://localhost:${PORT}/tusky/${BACKGROUND_FILE_ID}`);
+  if (!bgResp.ok) throw new Error(`Proxy download failed (${bgResp.status}): ${bgResp.statusText}`);
+  const bgBuf = Buffer.from(await bgResp.arrayBuffer());
+  console.log(`✅  got ${bgBuf.length} bytes from proxy/${BACKGROUND_FILE_ID}`);
+
+  // 3️⃣ layer them with sharp
+  console.log(`🔧 layering background + fish...`);
+  const pngBuffer = await sharp(bgBuf)
+    .resize(2048, 2048)
+    .composite([{ input: fishBuf, gravity: 'center' }])
+    .png()
+    .toBuffer();
+
+  // 4️⃣ write to temp file
+  const tmpPath = path.join(os.tmpdir(), `${fishHash}.png`);
+  fs.writeFileSync(tmpPath, pngBuffer);
+  console.log(`💾 composed PNG written to ${tmpPath}`);
+  return tmpPath;
+}
+
+async function uploadToTusky(filePath) {
+  const stats  = fs.statSync(filePath);
+  const stream = fs.createReadStream(filePath);
+
+  console.log(`☁️  uploading composed image ${filePath} to Tusky…`);
+  // 1) start the tus upload
+  const upResp = await fetch(
+    `https://api.tusky.io/uploads?vaultId=${TUSKY_VAULT_ID}`,
+    {
+      method:  'POST',
+      headers: {
+        'Api-Key':        TUSKY_API_KEY,
+        'Content-Type':   'application/offset+octet-stream',
+        'Content-Length': stats.size,
+        'Content-Disposition': `attachment; filename="${path.basename(filePath)}"`,
+      },
+      body: stream,
+    }
+  );
+  if (!upResp.ok) {
+    throw new Error(`Tusky upload failed: ${upResp.statusText}`);
+  }
+
+  // 2) extract uploadId
+  const location = upResp.headers.get('location');
+  const uploadId = location.split('/').pop();
+  console.log(`✅ upload complete, uploadId=${uploadId}`);
+
+  // 3) poll /files/:uploadId until blobId != "unknown" (max 15 attempts)
+  const maxAttempts = 15;
+  const delayMs     = 2000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(`🔍 polling /files/${uploadId} for blobId (attempt ${attempt}/${maxAttempts})…`);
+    const fResp = await fetch(`https://api.tusky.io/files/${uploadId}`, {
+      headers: { 'Api-Key': TUSKY_API_KEY }
+    });
+    if (!fResp.ok) {
+      throw new Error(`Tusky file-info fetch failed: ${fResp.statusText}`);
+    }
+
+    const info = await fResp.json();
+    console.log('🗂️ file metadata:', info);
+
+    if (info.blobId && info.blobId !== 'unknown') {
+      console.log(`✅ got real blobId=${info.blobId}`);
+      return info.blobId;
+    }
+
+    if (attempt < maxAttempts) {
+      console.log(`⏳ still processing on Walrus, retrying in ${delayMs/1000}s…`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
+  throw new Error(`Timed out waiting for blobId after ${maxAttempts} attempts`);
+}
+
+
+
+async function mintRandomFishNFT() {
+  // pick a random non-junk fish
+  const fishDbRaw = JSON.parse(fs.readFileSync(FISH_JSON, 'utf-8')).fish;
+  const keys = Object.keys(fishDbRaw);
+  let choice, data;
+  do {
+    choice = keys[Math.floor(Math.random() * keys.length)];
+    data   = fishDbRaw[choice];
+  } while (!data['base-image'] || data['base-image'] === '-');
+  console.log(`🐟 selected fish: ${choice} (hash: ${data['base-image']})`);
+
+  // compose & upload
+  const tmpFile = await composeFishImage(data['base-image']);
+  console.log(`☁️  uploading composed image to tusky...`);
+  const fileId = await uploadToTusky(tmpFile);
+  console.log(`🔗 uploaded, received new blobId=${fileId}`);
+  const url = `https://walrus.tusky.io/${fileId}`;
+
+  // mint
+  console.log(`🚀 minting NFT on chain...`);
+  const result = await mintNFT({
+    name:        choice,
+    description: `Layered NFT of a ${choice}`,
+    imageUrl:    url,
+    thumbnailUrl:url,
+  });
+  console.log(`🏷️  mint complete, digest=${result.digest}`);
+
+  return {
+    type:          choice,
+    digest:        result.digest,
+    objectChanges: result.objectChanges,
+  };
+}
+
+app.post('/mint-fish', async (req, res) => {
+  console.log('=== /mint-fish called ===');
+  try {
+    const { type, digest, objectChanges } = await mintRandomFishNFT();
+    console.log('=== /mint-fish returning success ===');
+    res.json({ success: true, fishType: type, digest, objectChanges });
+  } catch (err) {
+    console.error('=== /mint-fish error ===', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/mint-fish', async (_req, res) => {
+  try {
+    const { type, digest, objectChanges } = await mintRandomFishNFT();
+    res.json({ success: true, fishType: type, digest, objectChanges });
+  } catch (err) {
+    console.error('mint-fish error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// … finally, your existing server start
+app.listen(process.env.PORT||3000, () => {
+  console.log('Server running…');
+});
+
 
 /**
  * Mint a random, non-junk fish NFT using its `base-image` hash.
@@ -39,18 +319,6 @@ dotenv.config();
 
 // read existing file (or initialize if missing)
 await catchDb.read()
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.use(express.json());
-app.use(cors());
-
-import path from 'path';
-import { fileURLToPath } from 'url';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-app.use(express.static(path.join(__dirname, 'public')));
-
 
 app.get('/balance', async (_, res) => {
   try {
@@ -887,40 +1155,40 @@ app.get('/fish-catches/:playerId', (req, res) => {
   res.json(matches);
 });
 
-async function mintRandomFishNFT() {
-  // 1) load the latest fish data
-  await fishDb.read();
-  const fishEntries = Object.entries(fishDb.data.fish)
-    // keep only fish with a usable base-image hash
-    .filter(([, stats]) => {
-      const h = stats['base-image'];
-      return typeof h === 'string' && h !== '-' && h.length > 0;
-    });
+// async function mintRandomFishNFT() {
+//   // 1) load the latest fish data
+//   await fishDb.read();
+//   const fishEntries = Object.entries(fishDb.data.fish)
+//     // keep only fish with a usable base-image hash
+//     .filter(([, stats]) => {
+//       const h = stats['base-image'];
+//       return typeof h === 'string' && h !== '-' && h.length > 0;
+//     });
   
-  if (fishEntries.length === 0) {
-    throw new Error('No mintable fish found');
-  }
+//   if (fishEntries.length === 0) {
+//     throw new Error('No mintable fish found');
+//   }
 
-  // 2) pick one at random
-  const [type, stats] = fishEntries[Math.floor(Math.random() * fishEntries.length)];
-  const hash          = stats['base-image'];
-  const imageUrl      = `https://walrus.tusky.io/${hash}`;
-  const thumbnailUrl  = imageUrl;        // or point at a smaller thumb
+//   // 2) pick one at random
+//   const [type, stats] = fishEntries[Math.floor(Math.random() * fishEntries.length)];
+//   const hash          = stats['base-image'];
+//   const imageUrl      = `https://walrus.tusky.io/${hash}`;
+//   const thumbnailUrl  = imageUrl;        // or point at a smaller thumb
 
-  // 3) build a nice description
-  const description = `A freshly minted ${type} from the SUI fishing game`;
+//   // 3) build a nice description
+//   const description = `A freshly minted ${type} from the SUI fishing game`;
 
-  // 4) mint it
-  const result = await mintNFT({
-    name:        type,
-    description,
-    imageUrl,
-    thumbnailUrl,
-  });
+//   // 4) mint it
+//   const result = await mintNFT({
+//     name:        type,
+//     description,
+//     imageUrl,
+//     thumbnailUrl,
+//   });
 
-  return {
-    type,
-    digest:        result.digest,
-    objectChanges: result.objectChanges,
-  };
-}
+//   return {
+//     type,
+//     digest:        result.digest,
+//     objectChanges: result.objectChanges,
+//   };
+// }

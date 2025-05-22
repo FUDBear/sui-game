@@ -12,7 +12,11 @@
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "lowdb": "^7.0.1"
+    "form-data": "^4.0.2",
+    "lowdb": "^7.0.1",
+    "node-fetch": "^3.3.2",
+    "sharp": "^0.34.2",
+    "tus-js-client": "^4.3.1"
   },
   "exports": {
     "./client": "./dist/esm/client/index.js",
