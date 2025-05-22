@@ -31,6 +31,7 @@ catchDb.data ||= { history: [] }
 
 // ─── in-memory store only for non-junk catches ───
 const fishCatchesData = [];
+const mintLocks = new Set();
 
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
@@ -63,6 +64,7 @@ app.get('/tusky/:fileId', async (req, res) => {
   res.send(buf);
 });
 
+
 async function composeFishImage(fishHash, fishName) {
   console.log(`🎨 composing image layers for fishHash=${fishHash}`);
 
@@ -80,16 +82,24 @@ async function composeFishImage(fishHash, fishName) {
   const bgBuf = Buffer.from(await bgResp.arrayBuffer());
   console.log(`✅  got ${bgBuf.length} bytes from proxy/${BACKGROUND_FILE_ID}`);
 
-  // 3) build an SVG label
+  // 3) fetch NewRocker font, inline as Base64
+  const fontPath = path.join(__dirname, 'public', 'fonts', 'NewRocker-Regular.ttf');
+  const fontBuf  = fs.readFileSync(fontPath);
+  const fontBase64 = fontBuf.toString('base64');
+  const fontDataUri = `data:font/ttf;base64,${fontBase64}`;
+
+  // 4) build an SVG label with embedded font
   const svgLabel = `
-    <svg width="2048" height="2048">
-      <style>
+    <svg width="2048" height="2048" xmlns="http://www.w3.org/2000/svg">
+      <style type="text/css">
+        @font-face {
+          font-family: 'NewRocker';
+          src: url('${fontDataUri}') format('truetype');
+        }
         .label {
-          font-family: sans-serif;
+          font-family: 'NewRocker', sans-serif;
           font-size: 64px;
-          fill: white;
-          stroke: black;
-          stroke-width: 4px;
+          fill: black;
         }
       </style>
       <text x="40" y="2000" class="label">${fishName}</text>
@@ -97,7 +107,7 @@ async function composeFishImage(fishHash, fishName) {
   `;
   const svgBuffer = Buffer.from(svgLabel);
 
-  // 4) composite everything
+  // 5) composite everything
   console.log(`🔧 layering background + fish + label...`);
   const finalPng = await sharp(bgBuf)
     .resize(2048, 2048)
@@ -108,13 +118,14 @@ async function composeFishImage(fishHash, fishName) {
     .png()
     .toBuffer();
 
-  // 5) write out to temp file
+  // 6) write out to temp file
   const tmpPath = path.join(os.tmpdir(), `${fishHash}.png`);
   fs.writeFileSync(tmpPath, finalPng);
   console.log(`💾 composed PNG with label written to ${tmpPath}`);
 
   return tmpPath;
 }
+
 
 async function uploadToTusky(filePath) {
   const stats  = fs.statSync(filePath);
@@ -1191,6 +1202,11 @@ app.post('/mint-caught-fish', async (req, res) => {
     });
   }
 
+  if (mintLocks.has(playerId)) {
+    return res.status(429).json({ error: 'Mint in progress, please wait.' });
+  }
+  mintLocks.add(playerId);
+
   // 1) grab all cached catches for this player
   const playerCatches = fishCatchesData.filter(c => c.playerId === playerId);
   if (playerCatches.length === 0) {
@@ -1219,7 +1235,7 @@ app.post('/mint-caught-fish', async (req, res) => {
     const hash = fishStats['base-image'];
 
     // 3) compose & upload
-    const tmp    = await composeFishImage(hash);
+    const tmp    = await composeFishImage(hash, record.type);
     const blobId = await uploadToTusky(tmp);
     const url    = `https://walrus.tusky.io/${blobId}`;
 
@@ -1233,7 +1249,6 @@ app.post('/mint-caught-fish', async (req, res) => {
       thumbnailUrl:url
     });
     console.log(`🏷️ minted to ${playerId}, digest=${result.digest}`);
-
 
     // 5) mark as minted so you don’t double-mint
     record.minted = true;
@@ -1250,5 +1265,7 @@ app.post('/mint-caught-fish', async (req, res) => {
   } catch (err) {
     console.error('mint-caught-fish error', err);
     return res.status(500).json({ error: err.message });
+  } finally {
+    mintLocks.delete(playerId);
   }
 });
