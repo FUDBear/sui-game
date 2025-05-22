@@ -16,6 +16,9 @@ export const client  = new SuiClient({ url: RPC_URL });
 export const keypair = Ed25519Keypair.deriveKeypair(process.env.SUI_MNEMONIC);
 export const address = keypair.getPublicKey().toSuiAddress();
 
+const MODULE = "testnet_nft";
+const ENTRY_FN = "mint_to_sender";
+
 // No real SDK calls for now—just stubbed
 export async function fundIfNeeded() {
   // no-op until contract is deployed
@@ -35,9 +38,8 @@ export async function callRewardWinner() {
 
 export async function mintNFT({ name, description, imageUrl, thumbnailUrl }) {
   const tx = new Transaction();
-
   tx.moveCall({
-    target: '0x3f318c66e0987eea240227e9104ebb13a54764765e5fe098132fcbf227b19eca::testnet_nft::mint_to_sender',
+    target: `${PACKAGE_ID}::${MODULE}::${ENTRY_FN}`,
     arguments: [
       tx.pure.string(name),
       tx.pure.string(description),
@@ -45,10 +47,8 @@ export async function mintNFT({ name, description, imageUrl, thumbnailUrl }) {
       tx.pure.string(thumbnailUrl),
     ],
   });
-
   tx.setSender(address);
   const { bytes, signature } = await tx.sign({ client, signer: keypair });
-
   return await client.executeTransactionBlock({ transactionBlock: bytes, signature });
 }
 
