@@ -16,6 +16,9 @@ export const catchDb = new Low(catchAdapter, { history: [] })
 await catchDb.read()
 catchDb.data ||= { history: [] }
 
+// ─── in-memory store only for non-junk catches ───
+const fishCatchesData = [];
+
 dotenv.config();
 
 /**
@@ -43,10 +46,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Health‐check endpoint
-app.get('/ping', (_, res) => {
-  res.json({ pong: true });
-});
 
 app.get('/balance', async (_, res) => {
   try {
@@ -57,31 +56,6 @@ app.get('/balance', async (_, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
-// POST /play → roll & call Move on win
-// app.post('/play', async (_, res) => {
-  
-//   const roll = Math.floor(Math.random() * 26);
-//   const win  = roll > 22;
-
-//   if (!win) {
-//     return res.json({ win: false, roll });
-//   }
-
-//   try {
-//     const tx = await callRewardWinner();
-//     res.json({
-//       win: true,
-//       roll,
-//       txDigest: tx.digest,
-//       effects: tx.effects,
-//       events: tx.events,
-//     });
-//   } catch (err) {
-//     console.error('Contract call failed:', err);
-//     res.status(500).json({ error: err.message });
-//   }
-// });
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
@@ -147,7 +121,7 @@ app.post('/player/init', async (req, res) => {
   await db.read();
   const players = db.data.players;
 
-  // if they don’t exist yet, create them
+  // if they don't exist yet, create them
   if (!players[playerId]) {
     const newState = await createNewPlayer(playerId);
     return res.json({ playerId, state: newState, created: true });
@@ -209,44 +183,6 @@ app.get('/player-info/:playerId', async (req, res) => {
 
   return res.json({ playerId, ...player });
 });
-
-/**
- * POST /player/toggle-card
- * body: { playerId: string, index: number }
- */
-// app.post('/player/toggle-card', async (req, res) => {
-//   const { playerId, index } = req.body;
-
-//   if (!playerId || typeof index !== 'number') {
-//     return res.status(400).json({ error: 'playerId and numeric index required' });
-//   }
-
-//   // load latest
-//   await db.read();
-//   const player = db.data.players[playerId];
-//   if (!player) {
-//     return res.status(404).json({ error: `Player "${playerId}" not found` });
-//   }
-
-//   // bounds check
-//   if (index < 0 || index >= player.hand.length) {
-//     return res.status(400).json({ error: `Index must be between 0 and ${player.hand.length - 1}` });
-//   }
-
-//   // toggle logic
-//   const current = player.activeHand[index];
-//   if (current > -1) {
-//     // already active → deactivate
-//     player.activeHand[index] = -1;
-//   } else {
-//     // inactive → activate from the hand array
-//     player.activeHand[index] = player.hand[index];
-//   }
-
-//   // persist and respond
-//   await db.write();
-//   res.json({ playerId, activeHand: player.activeHand, hand: player.hand });
-// });
 
 /**
  * POST /players/refill-decks
@@ -496,7 +432,7 @@ async function gameLoop() {
   const castsToProcess = [...playerCasts];
   playerCasts.length   = 0;
 
-  // 2) tally votes *for* the next loop’s event
+  // 2) tally votes *for* the next loop's event
   const voteCounts = {};
   for (const rec of castsToProcess) {
     applyEventBonuses(voteCounts, rec.bonuses);
@@ -583,12 +519,23 @@ async function gameLoop() {
       length:    metrics.length,
     };
 
+    // ONLY record non-junk (i.e. real fish) into fishCatchesData
+    if (winner.stats.rarity !== 'junk') {
+      fishCatchesData.push({
+        playerId: catchRecord.playerId,
+        type:     catchRecord.catch.type,
+        at:       catchRecord.at,
+        weight:   catchRecord.weight,
+        length:   catchRecord.length,
+      });
+    }
+
     // enqueue for later claiming
     unclaimedCatches.push(catchRecord);
 
     await recordCatchHistory(catchRecord);
 
-      // mark player as “has a catch to claim”
+      // mark player as "has a catch to claim"
       await db.read();
       if (db.data.players[rec.playerId]) {
         db.data.players[rec.playerId].state = 3;
@@ -615,9 +562,9 @@ async function gameLoop() {
     console.log(`⏩ Phase: ${oldPhase} → ${lastPhase}`);
   }
 
-   // ✨ when we wrap back to hour 0, reset every player’s deck
+   // ✨ when we wrap back to hour 0, reset every player's deck
    if (currentHour === 0) {
-    console.log('🌑 It’s dawn—resetting all player decks and hands');
+    console.log("🌑 It's dawn—resetting all player decks and hands");
     await cardsDb.read();
     await db.read();
 
@@ -636,7 +583,7 @@ async function gameLoop() {
       // // reset their activeHand slots
       // player.activeHand = [-1, -1, -1];
 
-      // // optionally reset state back to “can cast” (1)
+      // // optionally reset state back to "can cast" (1)
       // player.state = 1;
     }
 
@@ -799,7 +746,7 @@ app.get('/state', (req, res) => {
 //       .json({ error: 'You already have a pending cast. Wait for that to process.' });
 //   }
 
-//   // 2) Prevent new cast if you haven’t claimed your last catch
+//   // 2) Prevent new cast if you haven't claimed your last catch
 //   if (unclaimedCatches.some(c => c.playerId === playerId)) {
 //     return res
 //       .status(400)
@@ -840,7 +787,7 @@ function isFishCurrentlyActive(stats, phase, chosenEvent) {
            stats['only-active-events'].includes(chosenEvent);
   }
 
-  // otherwise, it’s active
+  // otherwise, it's active
   return true;
 }
 
@@ -901,8 +848,20 @@ app.get('/catch-history', (req, res) => {
   res.json({ history: catchHistory });
 });
 
-// — or, if you’d rather serve the on-disk version: —
+// — or, if you'd rather serve the on-disk version: —
 app.get('/catch-history/persisted', async (req, res) => {
   await catchDb.read();
   res.json({ history: catchDb.data.history });
+});
+
+// GET all fish catches
+app.get('/fish-catches', (req, res) => {
+  res.json(fishCatchesData);
+});
+
+// GET all fish catches for a specific player
+app.get('/fish-catches/:playerId', (req, res) => {
+  const { playerId } = req.params;
+  const matches = fishCatchesData.filter(c => c.playerId === playerId);
+  res.json(matches);
 });

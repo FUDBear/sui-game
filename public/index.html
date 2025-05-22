@@ -50,6 +50,10 @@
 
     <h3>Catch History</h3>
     <ul id="history-list"><li><em>loading…</em></li></ul>
+
+    <h3>Fish Catches</h3>
+    <ul id="state-fish-catches"><li><em>loading…</em></li></ul>
+
   </section>
 
   <script>
@@ -183,6 +187,22 @@
           .map(line=>`<li>${line}</li>`).join('') || '<li><em>(none)</em></li>';
       } catch (e) {
         console.error('refreshState error', e);
+      }
+
+      // ── fetch and render fish-catches ──
+      try {
+        const fishCatches = await getJSON('/fish-catches');
+        document.getElementById('state-fish-catches').innerHTML = fishCatches.length
+          ? fishCatches.map(c =>
+              `<li>
+                ${c.playerId}: ${c.type} @ ${new Date(c.at).toLocaleTimeString()}
+                ${c.weight != null ? `[${c.weight} lbs]` : ''}
+                ${c.length != null ? `[${c.length} ft]` : ''}
+              </li>`
+          ).join('')
+          : '<li><em>(none)</em></li>';
+      } catch (e) {
+        console.error('Could not load fish catches', e);
       }
     }
 
