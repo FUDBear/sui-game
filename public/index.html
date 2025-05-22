@@ -17,7 +17,7 @@
   </style>
 </head>
 <body>
-  <h1>SUI Game Dashboard</h1>
+  <h1>Darkshore Fishing Club Dashboard</h1>
 
   <section>
     <h2>Cast / Claim / Init</h2>
@@ -55,6 +55,14 @@
     <ul id="state-fish-catches"><li><em>loading…</em></li></ul>
     
     <button id="btn-mint-fish">Mint Random Fish NFT</button>
+
+      <!-- …after your existing Mint Random Fish NFT button… -->
+      <div style="margin-top:1rem;">
+        <label for="mint-recipient">Recipient</label>
+        <input id="mint-recipient" placeholder="0x..." style="width:200px">
+        <button id="btn-mint-caught">Mint Caught Fish → Address</button>
+      </div>
+
 
   </section>
 
@@ -247,6 +255,24 @@
       }
     }
 
+    async function mintCaughtFish() {
+      const recipient = document.getElementById('mint-recipient').value.trim();
+      if (!recipient) return alert('Enter recipient address');
+      try {
+        const res = await fetch('/mint-caught-fish', {
+          method: 'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ recipient })
+        });
+        const j = await res.json();
+        if (!j.success) throw new Error(j.error || 'mint failed');
+        alert(`🎉 Minted “${j.fishType}” → ${recipient}\nDigest: ${j.digest}`);
+      } catch (err) {
+        console.error('mintCaughtFish error', err);
+        alert('Failed: ' + err.message);
+      }
+    }
+
     // — Wire up buttons & auto-refresh —
     document.getElementById('btn-init').onclick      = submitInit;
     document.getElementById('btn-cast').onclick      = submitCast;
@@ -255,6 +281,7 @@
     document.getElementById('btn-claim-all').onclick = claimAll;
     document.getElementById('btn-refill').onclick   = refillDecks;
     document.getElementById('btn-mint-fish').onclick = mintRandomFish;
+    document.getElementById('btn-mint-caught').onclick = mintCaughtFish;
 
     refreshState();
     setInterval(refreshState, 5000);

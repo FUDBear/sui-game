@@ -38,6 +38,24 @@
       "madness": 0,
       "state": 1,
       "casts": 0
+    },
+    "0x5e1b5dd3433323c03926f28d425d050c101f5d1cc619b0433b9f87f9df8d9bca": {
+      "activeHand": [
+        -1,
+        -1,
+        -1
+      ],
+      "hand": [
+        -1,
+        -1,
+        -1
+      ],
+      "deckCount": 0,
+      "deck": [],
+      "resetDeck": true,
+      "madness": 0,
+      "state": 1,
+      "casts": 0
     }
   }
 }

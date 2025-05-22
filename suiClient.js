@@ -18,6 +18,9 @@ export const address = keypair.getPublicKey().toSuiAddress();
 
 const MODULE = "testnet_nft";
 const ENTRY_FN = "mint_to_sender";
+const PACKAGE_ID = "0x1e479bcb9de55ccf9194200d810d35426ba81dff86467b4ac66f802687b93243";
+const ENTRY_TO  = "mint_to";
+
 
 // No real SDK calls for now—just stubbed
 export async function fundIfNeeded() {
@@ -59,6 +62,23 @@ export async function transferNFT(objectId, recipientAddress) {
     arguments: [
       tx.pure.object(objectId),
       tx.pure.address(recipientAddress),
+    ],
+  });
+  tx.setSender(address);
+  const { bytes, signature } = await tx.sign({ client, signer: keypair });
+  return client.executeTransactionBlock({ transactionBlock: bytes, signature });
+}
+
+export async function mintNFTTo({ recipient, name, description, imageUrl, thumbnailUrl }) {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${process.env.PACKAGE_ID}::${MODULE}::${ENTRY_TO}`,
+    arguments: [
+      tx.pure.address(recipient),
+      tx.pure.string(name),
+      tx.pure.string(description),
+      tx.pure.string(imageUrl),
+      tx.pure.string(thumbnailUrl),
     ],
   });
   tx.setSender(address);
