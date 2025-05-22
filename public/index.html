@@ -62,6 +62,20 @@
         <input id="mint-recipient" placeholder="0x..." style="width:200px">
         <button id="btn-mint-caught">Mint Caught Fish → Address</button>
       </div>
+    
+      <section>
+        <h2>Admin</h2>
+        <button id="btn-auto-catch-all">Auto-Catch for Everyone</button>
+      </section>
+
+      <section>
+        <h3>Mint a Caught Fish</h3>
+        <label for="mint-player-id">Player ID</label>
+        <input id="mint-player-id" placeholder="player_..." style="width:180px">
+        <label for="mint-index">Catch Index</label>
+        <input id="mint-index" type="number" min="0" style="width:80px">
+        <button id="btn-mint-caught-fish">Mint Caught Fish</button>
+      </section>
 
 
   </section>
@@ -273,6 +287,48 @@
       }
     }
 
+    async function autoCatchAll() {
+      try {
+        const res = await fetch('/auto-catch-all', { method: 'POST' });
+        const j   = await res.json();
+        if (!j.success) {
+          return alert('Error: ' + (j.error || 'unknown'));
+        }
+        alert(`✅ Auto‐caught ${j.newCatches.length} fish!`);
+        // if you have a refreshState() helper, call it to update the UI
+        if (typeof refreshState === 'function') refreshState();
+      } catch (err) {
+        console.error('autoCatchAll error', err);
+        alert('Failed to auto-catch: ' + err.message);
+      }
+    }
+
+    async function mintCaught() {
+      console.log('mintCaught');
+      const playerId = document.getElementById('mint-player-id').value.trim();
+      const index    = parseInt(document.getElementById('mint-index').value, 10);
+      if (!playerId || isNaN(index)) {
+        return alert('You must supply a playerId and a numeric index');
+      }
+
+      try {
+        const res = await fetch('/mint-caught-fish', {
+          method:  'POST',
+          headers: {'Content-Type':'application/json'},
+          body:    JSON.stringify({ playerId, index })
+        });
+        const j = await res.json();
+        if (!j.success) {
+          throw new Error(j.error || 'Mint failed');
+        }
+        alert(`✅ Minted "${j.fishType}" for ${playerId} (tx: ${j.digest})`);
+        if (typeof refreshState === 'function') refreshState();
+      } catch (err) {
+        console.error('mintCaught error', err);
+        alert('Error minting caught fish: ' + err.message);
+      }
+    }
+
     // — Wire up buttons & auto-refresh —
     document.getElementById('btn-init').onclick      = submitInit;
     document.getElementById('btn-cast').onclick      = submitCast;
@@ -282,6 +338,8 @@
     document.getElementById('btn-refill').onclick   = refillDecks;
     document.getElementById('btn-mint-fish').onclick = mintRandomFish;
     document.getElementById('btn-mint-caught').onclick = mintCaughtFish;
+    document.getElementById('btn-auto-catch-all').addEventListener('click', autoCatchAll);
+    document.getElementById('btn-mint-caught-fish').onclick = mintCaught;
 
     refreshState();
     setInterval(refreshState, 5000);

@@ -757,6 +757,7 @@ async function gameLoop() {
         at:       catchRecord.at,
         weight:   catchRecord.weight,
         length:   catchRecord.length,
+        minted:   catchRecord.minted
       });
     }
 
@@ -773,7 +774,8 @@ async function gameLoop() {
           type:   catchRecord.catch.type,
           at:     catchRecord.at,
           weight: catchRecord.weight,
-          length: catchRecord.length
+          length: catchRecord.length,
+          minted: false
         }; // Cache catch
         await db.write();
       }
@@ -1096,6 +1098,61 @@ app.get('/fish-catches/:playerId', (req, res) => {
   res.json(matches);
 });
 
+app.post('/auto-catch-all', async (_req, res) => {
+  try {
+    // 1) load players & fish index
+    await db.read();
+    await fishDb.read();
+    const players = Object.keys(db.data.players);
+    const fishMap = fishDb.data.fish;
+
+    const newCatches = [];
+
+    for (const playerId of players) {
+      // pick random non-junk
+      const entries = Object.entries(fishMap)
+        .filter(([, stats]) => stats['base-image'] && stats.rarity !== 'junk');
+      if (entries.length === 0) continue;
+      const [type, stats] = entries[Math.floor(Math.random() * entries.length)];
+
+      // roll weight/length
+      const { weight, length } = rollFishMetrics(stats);
+
+      const catchRecord = {
+        playerId,
+        catch: { type, stats },
+        at:     new Date().toISOString(),
+        weight,
+        length,
+        minted: false, 
+      };
+
+      // record in memory & history
+      fishCatchesData.push({
+        playerId, type, at: catchRecord.at, weight, length
+      });
+      unclaimedCatches.push(catchRecord);
+      await recordCatchHistory(catchRecord);
+
+      // mark player as “has an unclaimed catch”
+      db.data.players[playerId].state = 3;
+      db.data.players[playerId].catch = {
+        type, at: catchRecord.at, weight, length
+      };
+
+      newCatches.push(catchRecord);
+    }
+
+    // persist player state updates
+    await db.write();
+
+    res.json({ success: true, newCatches });
+  } catch (err) {
+    console.error('/auto-catch-all error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 1️⃣ Helper: mints the caught fish NFT for a player→recipient
 async function mintCaughtFishNFTFor(playerId, recipient) {
   // find the first un-minted catch
@@ -1125,46 +1182,73 @@ async function mintCaughtFishNFTFor(playerId, recipient) {
 }
 
 app.post('/mint-caught-fish', async (req, res) => {
-  const { recipient } = req.body;
-  if (!recipient) {
-    return res.status(400).json({ error: 'recipient address required' });
+  console.log('=== /mint-caught-fish called with', req.body);
+  const { playerId, index } = req.body;
+
+  if (typeof playerId !== 'string' || typeof index !== 'number') {
+    return res.status(400).json({
+      error: 'playerId (string) and index (number) required'
+    });
+  }
+
+  // 1) grab all cached catches for this player
+  const playerCatches = fishCatchesData.filter(c => c.playerId === playerId);
+  if (playerCatches.length === 0) {
+    return res.status(404).json({
+      error: `No catches found for player ${playerId}`
+    });
+  }
+  if (index < 0 || index >= playerCatches.length) {
+    return res.status(400).json({
+      error: `Index out of range (0–${playerCatches.length - 1})`
+    });
+  }
+
+  const record = playerCatches[index];
+  if (record.minted) {
+    return res.status(400).json({ error: 'That fish has already been minted' });
   }
 
   try {
-    // 1) pick a random non-junk fish from fish.json
-    const fishIndex = JSON.parse(fs.readFileSync(FISH_JSON, 'utf-8')).fish;
-    const types = Object.keys(fishIndex).filter(
-      t => fishIndex[t]['base-image'] && fishIndex[t]['base-image'] !== '-'
-    );
-    const choice = types[Math.floor(Math.random() * types.length)];
-    const hash   = fishIndex[choice]['base-image'];
-    console.log(`🐟 picked ${choice} for ${recipient} (hash=${hash})`);
+    // 2) lookup the base-image hash from fish.json
+    await fishDb.read();
+    const fishStats = fishDb.data.fish[record.type];
+    if (!fishStats || !fishStats['base-image'] || fishStats['base-image'] === '-') {
+      throw new Error(`No base-image for fish type "${record.type}"`);
+    }
+    const hash = fishStats['base-image'];
 
-    // 2) compose + upload just like before
-    const tmp = await composeFishImage(hash);
+    // 3) compose & upload
+    const tmp    = await composeFishImage(hash);
     const blobId = await uploadToTusky(tmp);
     const url    = `https://walrus.tusky.io/${blobId}`;
-    console.log(`🔗 uploaded composed image → ${blobId}`);
 
-    // 3) mint to their address
-    console.log(`🚀 minting "${choice}" to ${recipient}…`);
-    const result = await mintNFTTo({
-      recipient,
-      name:        choice,
-      description: `Layered NFT of a ${choice}`,
+    // 4) mint to the player's address
+    console.log(`🚀 minting "${record.type}" for ${playerId} @ ${url}`);
+    
+    const result = await mintNFTTo(playerId, {
+      name:        record.type,
+      description: `Your catch: ${record.type}`,
       imageUrl:    url,
-      thumbnailUrl:url,
+      thumbnailUrl:url
     });
-    console.log(`🏷️ minted, digest=${result.digest}`);
+    console.log(`🏷️ minted to ${playerId}, digest=${result.digest}`);
 
-    res.json({
-      success: true,
-      fishType: choice,
-      digest: result.digest,
+
+    // 5) mark as minted so you don’t double-mint
+    record.minted = true;
+
+    return res.json({
+      success:       true,
+      playerId,
+      index,
+      fishType:      record.type,
+      digest:        result.digest,
       objectChanges: result.objectChanges,
     });
-  } catch (e) {
-    console.error('/mint-caught-fish error', e);
-    res.status(500).json({ error: e.message });
+
+  } catch (err) {
+    console.error('mint-caught-fish error', err);
+    return res.status(500).json({ error: err.message });
   }
 });
