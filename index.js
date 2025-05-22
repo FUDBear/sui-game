@@ -8,7 +8,7 @@ import fetch from 'node-fetch';
 import sharp from 'sharp';
 import tus from 'tus-js-client';
 
-import { client, address, mintNFT, callRewardWinner } from './suiClient.js';
+import { client, address, mintNFT, callRewardWinner, transferNFT } from './suiClient.js';
 import { db } from './db.js'
 import { fishDb } from './fishDb.js'
 import { cardsDb } from './cardsDB.js'
@@ -1096,40 +1096,65 @@ app.get('/fish-catches/:playerId', (req, res) => {
   res.json(matches);
 });
 
-// async function mintRandomFishNFT() {
-//   // 1) load the latest fish data
-//   await fishDb.read();
-//   const fishEntries = Object.entries(fishDb.data.fish)
-//     // keep only fish with a usable base-image hash
-//     .filter(([, stats]) => {
-//       const h = stats['base-image'];
-//       return typeof h === 'string' && h !== '-' && h.length > 0;
-//     });
-  
-//   if (fishEntries.length === 0) {
-//     throw new Error('No mintable fish found');
-//   }
+app.post('/mint-caught-fish', async (req, res) => {
+  try {
+    const { playerId, walletAddress } = req.body;
+    if (!playerId || !walletAddress) {
+      return res.status(400).json({ error: 'playerId and walletAddress required' });
+    }
 
-//   // 2) pick one at random
-//   const [type, stats] = fishEntries[Math.floor(Math.random() * fishEntries.length)];
-//   const hash          = stats['base-image'];
-//   const imageUrl      = `https://walrus.tusky.io/${hash}`;
-//   const thumbnailUrl  = imageUrl;        // or point at a smaller thumb
+    // 1) find their last catch
+    const catches = fishCatchesData.filter(c => c.playerId === playerId);
+    if (catches.length === 0) {
+      return res.status(404).json({ error: `No catches for player "${playerId}"` });
+    }
+    const lastCatch = catches[catches.length - 1];
+    const fishType  = lastCatch.type;
 
-//   // 3) build a nice description
-//   const description = `A freshly minted ${type} from the SUI fishing game`;
+    console.log(`🎣 mint-caught-fish: player=${playerId}, fish=${fishType}, to=${walletAddress}`);
 
-//   // 4) mint it
-//   const result = await mintNFT({
-//     name:        type,
-//     description,
-//     imageUrl,
-//     thumbnailUrl,
-//   });
+    // 2) get its base-image hash
+    const fishDbRaw = JSON.parse(fs.readFileSync(FISH_JSON, 'utf-8')).fish;
+    const hash      = fishDbRaw[fishType]['base-image'];
+    if (!hash || hash === '-') {
+      throw new Error(`Fish "${fishType}" has no image hash`);
+    }
 
-//   return {
-//     type,
-//     digest:        result.digest,
-//     objectChanges: result.objectChanges,
-//   };
-// }
+    // 3) compose & upload the layered image
+    const tmpFile = await composeFishImage(hash);
+    const blobId  = await uploadToTusky(tmpFile);
+    const url     = `https://walrus.tusky.io/${blobId}`;
+
+    // 4) mint the NFT *to your server address*
+    console.log(`🚀 minting "${fishType}" NFT to server`);
+    const mintResult = await mintNFT({
+      name:        fishType,
+      description: `Caught ${fishType} by ${playerId}`,
+      imageUrl:    url,
+      thumbnailUrl:url,
+    });
+
+    // 5) extract the newly-created object id
+    const createdChange = mintResult.objectChanges.find(ch => ch.created);
+    if (!createdChange) {
+      throw new Error('Couldn’t find minted object in objectChanges');
+    }
+    const newObjectId = createdChange.objectId;
+    console.log(`🏷️  minted objectId=${newObjectId}`);
+
+    // 6) transfer it into the user’s wallet
+    console.log(`🚚 transferring ${newObjectId} → ${walletAddress}`);
+    await transferNFT(newObjectId, walletAddress);
+
+    res.json({
+      success:       true,
+      fishType,
+      digest:        mintResult.digest,
+      objectId:      newObjectId,
+      recipient:     walletAddress,
+    });
+  } catch (err) {
+    console.error('mint-caught-fish error', err);
+    res.status(500).json({ error: err.message });
+  }
+});

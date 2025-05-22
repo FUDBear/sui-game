@@ -52,3 +52,16 @@ export async function mintNFT({ name, description, imageUrl, thumbnailUrl }) {
   return await client.executeTransactionBlock({ transactionBlock: bytes, signature });
 }
 
+export async function transferNFT(objectId, recipientAddress) {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${PACKAGE_ID}::${MODULE}::transfer`,
+    arguments: [
+      tx.pure.object(objectId),
+      tx.pure.address(recipientAddress),
+    ],
+  });
+  tx.setSender(address);
+  const { bytes, signature } = await tx.sign({ client, signer: keypair });
+  return client.executeTransactionBlock({ transactionBlock: bytes, signature });
+}
