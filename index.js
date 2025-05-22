@@ -63,39 +63,55 @@ app.get('/tusky/:fileId', async (req, res) => {
   res.send(buf);
 });
 
-async function composeFishImage(fishHash) {
+async function composeFishImage(fishHash, fishName) {
   console.log(`🎨 composing image layers for fishHash=${fishHash}`);
 
-  // 1️⃣ pull the fish sprite directly from Walrus
+  // 1) fetch fish sprite
   console.log(`➡️  fetching fish from Walrus CDN: ${fishHash}`);
   const fishResp = await fetch(`https://walrus.tusky.io/${fishHash}`);
-  if (!fishResp.ok) {
-    throw new Error(`Failed to fetch fish layer: ${fishResp.statusText}`);
-  }
+  if (!fishResp.ok) throw new Error(`Failed to fetch fish layer: ${fishResp.statusText}`);
   const fishBuf = Buffer.from(await fishResp.arrayBuffer());
   console.log(`✅  got ${fishBuf.length} bytes from Walrus/${fishHash}`);
 
-  // 2️⃣ pull the background via your proxy endpoint
+  // 2) fetch background via your proxy
   console.log(`➡️  proxy fetching background via /tusky/${BACKGROUND_FILE_ID}`);
   const bgResp = await fetch(`http://localhost:${PORT}/tusky/${BACKGROUND_FILE_ID}`);
-  if (!bgResp.ok) {
-    throw new Error(`Proxy download failed (${bgResp.status}): ${bgResp.statusText}`);
-  }
+  if (!bgResp.ok) throw new Error(`Proxy download failed (${bgResp.status}): ${bgResp.statusText}`);
   const bgBuf = Buffer.from(await bgResp.arrayBuffer());
   console.log(`✅  got ${bgBuf.length} bytes from proxy/${BACKGROUND_FILE_ID}`);
 
-  // 3️⃣ layer them with Sharp
-  console.log(`🔧 layering background + fish...`);
-  const pngBuffer = await sharp(bgBuf)
-    .resize(2048, 2048)           // ensure a square canvas
-    .composite([{ input: fishBuf, gravity: 'center' }])
+  // 3) build an SVG label
+  const svgLabel = `
+    <svg width="2048" height="2048">
+      <style>
+        .label {
+          font-family: sans-serif;
+          font-size: 64px;
+          fill: white;
+          stroke: black;
+          stroke-width: 4px;
+        }
+      </style>
+      <text x="40" y="2000" class="label">${fishName}</text>
+    </svg>
+  `;
+  const svgBuffer = Buffer.from(svgLabel);
+
+  // 4) composite everything
+  console.log(`🔧 layering background + fish + label...`);
+  const finalPng = await sharp(bgBuf)
+    .resize(2048, 2048)
+    .composite([
+      { input: fishBuf, gravity: 'center' },
+      { input: svgBuffer, gravity: 'northwest' }
+    ])
     .png()
     .toBuffer();
 
-  // 4️⃣ write out to a temp file
+  // 5) write out to temp file
   const tmpPath = path.join(os.tmpdir(), `${fishHash}.png`);
-  fs.writeFileSync(tmpPath, pngBuffer);
-  console.log(`💾 composed PNG written to ${tmpPath}`);
+  fs.writeFileSync(tmpPath, finalPng);
+  console.log(`💾 composed PNG with label written to ${tmpPath}`);
 
   return tmpPath;
 }
@@ -171,7 +187,7 @@ async function mintRandomFishNFT() {
   console.log(`🐟 selected fish: ${choice} (hash: ${data['base-image']})`);
 
   // 2️⃣ compose the layered image
-  const tmpFile = await composeFishImage(data['base-image']);
+  const tmpFile = await composeFishImage(data['base-image'], `${choice}`);
   console.log(`☁️  composed image ready at ${tmpFile}`);
 
   // 3️⃣ upload it
@@ -209,16 +225,16 @@ app.post('/mint-fish', async (req, res) => {
   }
 });
 
-app.post('/mint-fish', async (_req, res) => {
-  console.log('=== /mint-fish called ===');
-  try {
-    const minted = await mintRandomFishNFT();
-    res.json({ success: true, ...minted });
-  } catch (err) {
-    console.error('=== /mint-fish error ===', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+// app.post('/mint-fish', async (_req, res) => {
+//   console.log('=== /mint-fish called ===');
+//   try {
+//     const minted = await mintRandomFishNFT();
+//     res.json({ success: true, ...minted });
+//   } catch (err) {
+//     console.error('=== /mint-fish error ===', err);
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 
 // … finally, your existing server start
 app.listen(process.env.PORT||3000, () => {
