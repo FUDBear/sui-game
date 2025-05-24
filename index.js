@@ -82,46 +82,20 @@ async function composeFishImage(fishHash, fishName) {
   const bgBuf = Buffer.from(await bgResp.arrayBuffer());
   console.log(`✅  got ${bgBuf.length} bytes from proxy/${BACKGROUND_FILE_ID}`);
 
-  // 3) fetch NewRocker font, inline as Base64
-  const fontPath = path.join(__dirname, 'public', 'fonts', 'NewRocker-Regular.ttf');
-  const fontBuf  = fs.readFileSync(fontPath);
-  const fontBase64 = fontBuf.toString('base64');
-  const fontDataUri = `data:font/ttf;base64,${fontBase64}`;
-
-  // 4) build an SVG label with embedded font
-  const svgLabel = `
-    <svg width="2048" height="2048" xmlns="http://www.w3.org/2000/svg">
-      <style type="text/css">
-        @font-face {
-          font-family: 'NewRocker';
-          src: url('${fontDataUri}') format('truetype');
-        }
-        .label {
-          font-family: 'NewRocker', sans-serif;
-          font-size: 64px;
-          fill: black;
-        }
-      </style>
-      <text x="40" y="2000" class="label">${fishName}</text>
-    </svg>
-  `;
-  const svgBuffer = Buffer.from(svgLabel);
-
-  // 5) composite everything
-  console.log(`🔧 layering background + fish + label...`);
+  // 3) composite everything
+  console.log(`🔧 layering background + fish...`);
   const finalPng = await sharp(bgBuf)
     .resize(2048, 2048)
     .composite([
-      { input: fishBuf, gravity: 'center' },
-      { input: svgBuffer, gravity: 'northwest' }
+      { input: fishBuf, gravity: 'center' }
     ])
     .png()
     .toBuffer();
 
-  // 6) write out to temp file
+  // 4) write out to temp file
   const tmpPath = path.join(os.tmpdir(), `${fishHash}.png`);
   fs.writeFileSync(tmpPath, finalPng);
-  console.log(`💾 composed PNG with label written to ${tmpPath}`);
+  console.log(`💾 composed PNG written to ${tmpPath}`);
 
   return tmpPath;
 }
@@ -1145,7 +1119,7 @@ app.post('/auto-catch-all', async (_req, res) => {
       unclaimedCatches.push(catchRecord);
       await recordCatchHistory(catchRecord);
 
-      // mark player as “has an unclaimed catch”
+      // mark player as "has an unclaimed catch"
       db.data.players[playerId].state = 3;
       db.data.players[playerId].catch = {
         type, at: catchRecord.at, weight, length
@@ -1241,16 +1215,18 @@ app.post('/mint-caught-fish', async (req, res) => {
 
     // 4) mint to the player's address
     console.log(`🚀 minting "${record.type}" for ${playerId} @ ${url}`);
+
+    const description = `${record.weight} Lbs - ${record.length} Inch ${record.at}`;
     
     const result = await mintNFTTo(playerId, {
       name:        record.type,
-      description: `Your catch: ${record.type}`,
+      description: description,
       imageUrl:    url,
       thumbnailUrl:url
     });
     console.log(`🏷️ minted to ${playerId}, digest=${result.digest}`);
 
-    // 5) mark as minted so you don’t double-mint
+    // 5) mark as minted so you don't double-mint
     record.minted = true;
 
     return res.json({
