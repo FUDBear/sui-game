@@ -130,7 +130,7 @@ async function uploadToTusky(filePath) {
   console.log(`✅ upload complete, uploadId=${uploadId}`);
 
   // 3) poll /files/:uploadId until blobId != "unknown" (max 15 attempts)
-  const maxAttempts = 15;
+  const maxAttempts = 200;
   const delayMs     = 2000;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     console.log(`🔍 polling /files/${uploadId} for blobId (attempt ${attempt}/${maxAttempts})…`);
@@ -1166,6 +1166,8 @@ async function mintCaughtFishNFTFor(playerId, recipient) {
   };
 }
 
+const mintQueue = [];
+
 app.post('/mint-caught-fish', async (req, res) => {
   console.log('=== /mint-caught-fish called with', req.body);
   const { playerId, index } = req.body;
@@ -1181,17 +1183,12 @@ app.post('/mint-caught-fish', async (req, res) => {
   }
   mintLocks.add(playerId);
 
-  // 1) grab all cached catches for this player
   const playerCatches = fishCatchesData.filter(c => c.playerId === playerId);
   if (playerCatches.length === 0) {
-    return res.status(404).json({
-      error: `No catches found for player ${playerId}`
-    });
+    return res.status(404).json({ error: `No catches found for player ${playerId}` });
   }
   if (index < 0 || index >= playerCatches.length) {
-    return res.status(400).json({
-      error: `Index out of range (0–${playerCatches.length - 1})`
-    });
+    return res.status(400).json({ error: `Index out of range (0–${playerCatches.length - 1})` });
   }
 
   const record = playerCatches[index];
@@ -1200,7 +1197,6 @@ app.post('/mint-caught-fish', async (req, res) => {
   }
 
   try {
-    // 2) lookup the base-image hash from fish.json
     await fishDb.read();
     const fishStats = fishDb.data.fish[record.type];
     if (!fishStats || !fishStats['base-image'] || fishStats['base-image'] === '-') {
@@ -1208,35 +1204,42 @@ app.post('/mint-caught-fish', async (req, res) => {
     }
     const hash = fishStats['base-image'];
 
-    // 3) compose & upload
-    const tmp    = await composeFishImage(hash, record.type);
-    const blobId = await uploadToTusky(tmp);
-    const url    = `https://walrus.tusky.io/${blobId}`;
+    const tmp = await composeFishImage(hash, record.type);
+    const stats = fs.statSync(tmp);
+    const stream = fs.createReadStream(tmp);
 
-    // 4) mint to the player's address
-    console.log(`🚀 minting "${record.type}" for ${playerId} @ ${url}`);
+    const upResp = await fetch(
+      `https://api.tusky.io/uploads?vaultId=${TUSKY_VAULT_ID}`,
+      {
+        method: 'POST',
+        headers: {
+          'Api-Key': TUSKY_API_KEY,
+          'Content-Type': 'application/offset+octet-stream',
+          'Content-Length': stats.size,
+          'Content-Disposition': `attachment; filename="${path.basename(tmp)}"`,
+        },
+        body: stream,
+      }
+    );
 
-    const description = `${record.weight} Lbs - ${record.length} Inch ${record.at}`;
-    
-    const result = await mintNFTTo(playerId, {
-      name:        record.type,
-      description: description,
-      imageUrl:    url,
-      thumbnailUrl:url
-    });
-    console.log(`🏷️ minted to ${playerId}, digest=${result.digest}`);
+    if (!upResp.ok) {
+      throw new Error(`Tusky upload failed: ${upResp.statusText}`);
+    }
 
-    // 5) mark as minted so you don't double-mint
-    record.minted = true;
+    const location = upResp.headers.get('location');
+    const uploadId = location.split('/').pop();
+    console.log(`⏳ queued for minting: uploadId=${uploadId}`);
 
-    return res.json({
-      success:       true,
+    mintQueue.push({
       playerId,
       index,
-      fishType:      record.type,
-      digest:        result.digest,
-      objectChanges: result.objectChanges,
+      fishType: record.type,
+      uploadId,
+      description: `${record.weight} Lbs - ${record.length} Inch ${record.at}`,
+      createdAt: Date.now(),
     });
+
+    return res.json({ success: true, status: 'queued', uploadId });
 
   } catch (err) {
     console.error('mint-caught-fish error', err);
@@ -1245,3 +1248,35 @@ app.post('/mint-caught-fish', async (req, res) => {
     mintLocks.delete(playerId);
   }
 });
+
+setInterval(async () => {
+  for (const item of [...mintQueue]) {
+    try {
+      const fResp = await fetch(`https://api.tusky.io/files/${item.uploadId}`, {
+        headers: { 'Api-Key': TUSKY_API_KEY }
+      });
+      if (!fResp.ok) continue;
+
+      const info = await fResp.json();
+      if (info.blobId && info.blobId !== 'unknown') {
+        const url = `https://walrus.tusky.io/${info.blobId}`;
+        const result = await mintNFTTo(item.playerId, {
+          name: item.fishType,
+          description: item.description,
+          imageUrl: url,
+          thumbnailUrl: url
+        });
+        console.log(`✅ Minted NFT for ${item.playerId}: ${result.digest}`);
+
+        const playerCatches = fishCatchesData.filter(c => c.playerId === item.playerId);
+        if (item.index >= 0 && item.index < playerCatches.length) {
+          playerCatches[item.index].minted = true;
+        }
+
+        mintQueue.splice(mintQueue.indexOf(item), 1);
+      }
+    } catch (err) {
+      console.error(`💥 Minting failed for ${item.uploadId}:`, err.message);
+    }
+  }
+}, 60000);
