@@ -663,8 +663,8 @@ async function gameLoop() {
   // 3) snapshot the event *currently* in effect
   const currentEvent = lastEvent;
 
-  console.log(`🕰️ Hour ${currentHourSnapshot} (Phase ${currentPhaseSnapshot} ${currentPhaseHour}/6)`);
-  console.log(`🎯 event: ${currentEvent || 'none'}`);
+  // console.log(`🕰️ Hour ${currentHourSnapshot} (Phase ${currentPhaseSnapshot} ${currentPhaseHour}/6)`);
+  // console.log(`🎯 event: ${currentEvent || 'none'}`);
 
   // 4) build the shared pool using currentPhaseSnapshot & currentEvent
   await fishDb.read();
@@ -689,11 +689,11 @@ async function gameLoop() {
   }
 
   // optional: log pool breakdown
-  const breakdown = pool.reduce((acc, f) => {
-    acc[f.type] = (acc[f.type] || 0) + 1;
-    return acc;
-  }, {});
-  printPoolBreakdown(breakdown, fishDb.data.fish);
+    // const breakdown = pool.reduce((acc, f) => {
+    //   acc[f.type] = (acc[f.type] || 0) + 1;
+    //   return acc;
+    // }, {});
+    // printPoolBreakdown(breakdown, fishDb.data.fish);
 
   // 5) each player draws under currentPhaseSnapshot/currentEvent
   for (const rec of castsToProcess) {
@@ -715,7 +715,7 @@ async function gameLoop() {
 
     const r      = Math.random() * totalWeight;
     const winner = cumulative.find(e => r < e.threshold) || cumulative[cumulative.length - 1];
-    console.log(`🎲 draw ${r.toFixed(2)} / ${totalWeight.toFixed(2)} → ${winner.type}`);
+    // console.log(`🎲 draw ${r.toFixed(2)} / ${totalWeight.toFixed(2)} → ${winner.type}`);
 
     const metrics = rollFishMetrics(winner.stats);
 
@@ -776,12 +776,12 @@ async function gameLoop() {
     const oldPhase = lastPhase;
     currentPhaseIndex = newPhaseIndex;
     lastPhase = phases[currentPhaseIndex];
-    console.log(`⏩ Phase: ${oldPhase} → ${lastPhase}`);
+    // console.log(`⏩ Phase: ${oldPhase} → ${lastPhase}`);
   }
 
    // ✨ when we wrap back to hour 0, reset every player's deck
    if (currentHour === 0) {
-    console.log("🌑 It's dawn—resetting all player decks and hands");
+    // console.log("🌑 It's dawn—resetting all player decks and hands");
     await cardsDb.read();
     await db.read();
 
@@ -807,7 +807,7 @@ async function gameLoop() {
     await db.write();
   }
 
-  console.log(`✅ gameLoop complete\n--------------------------------\n`);
+  // console.log(`✅ gameLoop complete\n--------------------------------\n`);
 }
 
 // start immediately, then every 20 seconds
@@ -1020,12 +1020,12 @@ function printPoolBreakdown(breakdown, fishIndex) {
     mythic:    '\x1b[35m',   // magenta (as a stand-in)
   };
 
-  console.log(`🎯 Pool breakdown (${Object.values(breakdown).reduce((a,b)=>a+b,0)}):`);
+  // console.log(`🎯 Pool breakdown (${Object.values(breakdown).reduce((a,b)=>a+b,0)}):`);
   for (const [type, count] of Object.entries(breakdown)) {
     const stats = fishIndex[type] || {};
     const rarity = stats.rarity || 'common';
     const color = C[rarity] || C.common;
-    console.log(`${color}  • ${type}: ${count}${C.reset}`);
+    //console.log(`${color}  • ${type}: ${count}${C.reset}`);
   }
 }
 
@@ -1280,3 +1280,20 @@ setInterval(async () => {
     }
   }
 }, 60000);
+
+app.get('/mint-queue', (req, res) => {
+  
+  const queueInfo = mintQueue.map(item => ({
+    playerId: item.playerId,
+    fishType: item.fishType,
+    uploadId: item.uploadId,
+    createdAt: item.createdAt,
+    status: 'pending',
+    timeInQueue: Date.now() - item.createdAt
+  }));
+
+  res.json({
+    queueLength: mintQueue.length,
+    items: queueInfo
+  });
+});

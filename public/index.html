@@ -54,6 +54,9 @@
     <h3>Fish Catches</h3>
     <ul id="state-fish-catches"><li><em>loading…</em></li></ul>
     
+    <h3>Mint Queue</h3>
+    <ul id="mint-queue"><li><em>loading…</em></li></ul>
+    
     <button id="btn-mint-fish">Mint Random Fish NFT</button>
 
       <!-- …after your existing Mint Random Fish NFT button… -->
@@ -228,6 +231,26 @@
       } catch (e) {
         console.error('Could not load fish catches', e);
       }
+
+      // ── fetch and render mint queue ──
+      try {
+        const queue = await getJSON('/mint-queue');
+        document.getElementById('mint-queue').innerHTML = queue.items.length
+          ? queue.items.map(item => 
+              `<li>
+                ${item.playerId}: ${item.fishType}
+                <br>
+                <small>
+                  Queue time: ${Math.floor(item.timeInQueue / 1000)}s
+                  <br>
+                  Upload ID: ${item.uploadId}
+                </small>
+              </li>`
+          ).join('')
+          : '<li><em>(queue empty)</em></li>';
+      } catch (e) {
+        console.error('Could not load mint queue', e);
+      }
     }
 
     async function mintRandomFish() {
@@ -262,7 +285,7 @@
         const j = await res.json();
         if (!j.success) throw new Error(j.error || 'mint failed');
 
-        alert(`🎉 Minted “${j.name}”!\nTransaction digest: ${j.digest}`);
+        alert(`🎉 Minted " ${j.name} "!\nTransaction digest: ${j.digest}`);
       } catch (err) {
         console.error('mintRandomFish error', err);
         alert('Failed to mint NFT: ' + err.message);
@@ -280,7 +303,7 @@
         });
         const j = await res.json();
         if (!j.success) throw new Error(j.error || 'mint failed');
-        alert(`🎉 Minted “${j.fishType}” → ${recipient}\nDigest: ${j.digest}`);
+        alert(`🎉 Minted " ${j.fishType} " → ${recipient}\nDigest: ${j.digest}`);
       } catch (err) {
         console.error('mintCaughtFish error', err);
         alert('Failed: ' + err.message);
@@ -343,6 +366,7 @@
 
     refreshState();
     setInterval(refreshState, 5000);
+    setInterval(refreshState, 3000); // Refresh mint queue more frequently
   </script>
 </body>
 </html>
