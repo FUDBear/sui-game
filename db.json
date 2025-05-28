@@ -1,83 +1,5 @@
 {
   "players": {
-    "1Pj3GBvSkPmJAYnz2unK8t5bwMLax7cWKUWBzIPDxSZY": {
-      "activeHand": [
-        -1,
-        -1,
-        -1
-      ],
-      "hand": [
-        13,
-        0,
-        1
-      ],
-      "deckCount": 20,
-      "deck": [
-        3,
-        9,
-        6,
-        16,
-        11,
-        3,
-        11,
-        5,
-        7,
-        17,
-        11,
-        2,
-        0,
-        4,
-        10,
-        13,
-        18,
-        15,
-        18,
-        2
-      ],
-      "resetDeck": true,
-      "madness": 0,
-      "state": 1,
-      "casts": 0
-    },
-    "0x5e1b5dd3433323c03926f28d425d050c101f5d1cc619b0433b9f87f9df8d9bca": {
-      "activeHand": [
-        -1,
-        -1,
-        -1
-      ],
-      "hand": [
-        9,
-        9,
-        1
-      ],
-      "deckCount": 20,
-      "deck": [
-        14,
-        9,
-        14,
-        4,
-        17,
-        8,
-        13,
-        4,
-        13,
-        16,
-        13,
-        3,
-        14,
-        1,
-        4,
-        5,
-        1,
-        11,
-        16,
-        0
-      ],
-      "resetDeck": true,
-      "madness": 0,
-      "state": 1,
-      "casts": 0
-    },
     "0x391d6f75b20f2b50fe41d53ec886c4ef7858f9c7a5d01dd0aa37df335e289761": {
       "activeHand": [
         -1,
@@ -85,32 +7,32 @@
         -1
       ],
       "hand": [
-        7,
-        9,
-        12
+        4,
+        8,
+        13
       ],
       "deckCount": 20,
       "deck": [
-        6,
-        7,
-        2,
-        2,
-        18,
+        4,
+        3,
         12,
+        8,
         4,
-        4,
-        18,
+        2,
         17,
-        12,
+        15,
+        15,
+        8,
         0,
-        13,
-        18,
+        3,
+        17,
+        15,
         2,
-        11,
-        10,
+        1,
         0,
-        11,
-        15
+        3,
+        3,
+        5
       ],
       "resetDeck": true,
       "madness": 0,

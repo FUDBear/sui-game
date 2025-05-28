@@ -28,6 +28,7 @@
     <button id="btn-init">Init Player</button>
     <button id="btn-cast">Cast</button>
     <button id="btn-claim">Claim</button>
+    <button id="btn-auto-fill-hand">Auto-Fill Hand</button>
     <button id="btn-cast-all">Cast All (Random)</button>
     <button id="btn-claim-all">Claim All</button>
     <button id="btn-refill">Refill Decks</button>
@@ -159,6 +160,30 @@
       if (!j.success) return alert('Error: ' + j.error);
       alert(`Claimed: ${j.claimed.catch.type} @ ${new Date(j.claimed.at).toLocaleTimeString()}`);
       refreshState();
+    }
+
+    // Add new function to auto-fill hand
+    async function autoFillHand() {
+      const playerId = document.getElementById('cast-player-id').value.trim();
+      if (!playerId) return alert('Need player ID');
+      
+      try {
+        const playerInfo = await getJSON(`/player-info/${playerId}`);
+        if (!playerInfo || !playerInfo.hand) {
+          return alert('No hand data found for player');
+        }
+        
+        // Filter out -1 values and join with commas
+        const validHand = playerInfo.hand.filter(card => card !== -1);
+        if (validHand.length === 0) {
+          return alert('No valid cards in hand');
+        }
+        
+        document.getElementById('cast-input').value = validHand.join(',');
+      } catch (e) {
+        console.error('autoFillHand error', e);
+        alert('Error loading player hand: ' + e.message);
+      }
     }
 
     // — Cast All / Claim All —
@@ -356,6 +381,7 @@
     document.getElementById('btn-init').onclick      = submitInit;
     document.getElementById('btn-cast').onclick      = submitCast;
     document.getElementById('btn-claim').onclick     = submitClaim;
+    document.getElementById('btn-auto-fill-hand').onclick = autoFillHand;
     document.getElementById('btn-cast-all').onclick  = castForAll;
     document.getElementById('btn-claim-all').onclick = claimAll;
     document.getElementById('btn-refill').onclick   = refillDecks;

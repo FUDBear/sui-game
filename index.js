@@ -8,6 +8,7 @@ import fetch from 'node-fetch';
 import sharp from 'sharp';
 import tus from 'tus-js-client';
 
+
 import { client, address, mintNFT, mintNFTTo } from './suiClient.js';
 import { db } from './db.js'
 import { fishDb } from './fishDb.js'
@@ -17,6 +18,10 @@ import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import { fileURLToPath } from 'url';
 import { Upload } from 'tus-js-client';
+
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+const execFileAsync = promisify(execFile);
 
 const app = express();
 dotenv.config();
@@ -64,6 +69,19 @@ app.get('/tusky/:fileId', async (req, res) => {
   res.send(buf);
 });
 
+/**
+ * Downloads a blob from Brightlystake's Walrus node using curl.
+ * @param {string} blobId
+ * @returns {Promise<Buffer>} - The binary buffer of the image
+ */
+async function fetchBlobWithCurl(blobId) {
+  const url = `http://walrus-testnet.brightlystake.com:9185/blob/${blobId}`;
+  const { stdout } = await execFileAsync('curl.exe', ['--http0.9', '--silent', '--output', '-', url], {
+    encoding: 'buffer',
+    maxBuffer: 10 * 1024 * 1024, // 10MB
+  });
+  return stdout;
+}
 
 async function composeFishImage(fishHash, fishName) {
   console.log(`🎨 composing image layers for fishHash=${fishHash}`);
@@ -100,7 +118,6 @@ async function composeFishImage(fishHash, fishName) {
   return tmpPath;
 }
 
-
 async function uploadToTusky(filePath) {
   const stats  = fs.statSync(filePath);
   const stream = fs.createReadStream(filePath);
@@ -116,6 +133,8 @@ async function uploadToTusky(filePath) {
         'Content-Type':   'application/offset+octet-stream',
         'Content-Length': stats.size,
         'Content-Disposition': `attachment; filename="${path.basename(filePath)}"`,
+        "name": "test",
+        "parentId": "11be5290-3544-4bc2-ace1-74ab7d6e6621",
       },
       body: stream,
     }
@@ -157,6 +176,63 @@ async function uploadToTusky(filePath) {
 
   throw new Error(`Timed out waiting for blobId after ${maxAttempts} attempts`);
 }
+
+// async function uploadToTusky(filePath) {
+//   const stats  = fs.statSync(filePath);
+//   const stream = fs.createReadStream(filePath);
+
+//   console.log(`☁️  uploading composed image ${filePath} to Tusky…`);
+//   // 1) start the tus upload
+//   const upResp = await fetch(
+//     `https://api.tusky.io/uploads?vaultId=${TUSKY_VAULT_ID}`,
+//     {
+//       method:  'POST',
+//       headers: {
+//         'Api-Key':        TUSKY_API_KEY,
+//         'Content-Type':   'application/offset+octet-stream',
+//         'Content-Length': stats.size,
+//         'Content-Disposition': `attachment; filename="${path.basename(filePath)}"`,
+//       },
+//       body: stream,
+//     }
+//   );
+//   if (!upResp.ok) {
+//     throw new Error(`Tusky upload failed: ${upResp.statusText}`);
+//   }
+
+//   // 2) extract uploadId
+//   const location = upResp.headers.get('location');
+//   const uploadId = location.split('/').pop();
+//   console.log(`✅ upload complete, uploadId=${uploadId}`);
+
+//   // 3) poll /files/:uploadId until blobId != "unknown" (max 15 attempts)
+//   const maxAttempts = 200;
+//   const delayMs     = 2000;
+//   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+//     console.log(`🔍 polling /files/${uploadId} for blobId (attempt ${attempt}/${maxAttempts})…`);
+//     const fResp = await fetch(`https://api.tusky.io/files/${uploadId}`, {
+//       headers: { 'Api-Key': TUSKY_API_KEY }
+//     });
+//     if (!fResp.ok) {
+//       throw new Error(`Tusky file-info fetch failed: ${fResp.statusText}`);
+//     }
+
+//     const info = await fResp.json();
+//     console.log('🗂️ file metadata:', info);
+
+//     if (info.blobId && info.blobId !== 'unknown') {
+//       console.log(`✅ got real blobId=${info.blobId}`);
+//       return info.blobId;
+//     }
+
+//     if (attempt < maxAttempts) {
+//       console.log(`⏳ still processing on Walrus, retrying in ${delayMs/1000}s…`);
+//       await new Promise(r => setTimeout(r, delayMs));
+//     }
+//   }
+
+//   throw new Error(`Timed out waiting for blobId after ${maxAttempts} attempts`);
+// }
 
 async function mintRandomFishNFT() {
   console.log(`=== mintRandomFishNFT called ===`);
@@ -1181,7 +1257,6 @@ app.post('/mint-caught-fish', async (req, res) => {
   if (mintLocks.has(playerId)) {
     return res.status(429).json({ error: 'Mint in progress, please wait.' });
   }
-  mintLocks.add(playerId);
 
   const playerCatches = fishCatchesData.filter(c => c.playerId === playerId);
   if (playerCatches.length === 0) {
@@ -1196,6 +1271,13 @@ app.post('/mint-caught-fish', async (req, res) => {
     return res.status(400).json({ error: 'That fish has already been minted' });
   }
 
+  // Make sure the mint is actually a fish and not junk
+  if (record.type === 'junk') {
+    return res.status(400).json({ error: 'Junk fish cannot be minted' });
+  }
+
+  mintLocks.add(playerId);
+
   try {
     await fishDb.read();
     const fishStats = fishDb.data.fish[record.type];
@@ -1208,8 +1290,11 @@ app.post('/mint-caught-fish', async (req, res) => {
     const stats = fs.statSync(tmp);
     const stream = fs.createReadStream(tmp);
 
+    const parentId = "11be5290-3544-4bc2-ace1-74ab7d6e6621";
+    const name = `${record.type} | ${record.weight} Lbs | ${record.length} Inch - ${record.playerId} @${record.at}` ;
+
     const upResp = await fetch(
-      `https://api.tusky.io/uploads?vaultId=${TUSKY_VAULT_ID}`,
+      `https://api.tusky.io/uploads?vaultId=${TUSKY_VAULT_ID}&parentId=${parentId}&filename=${name}`,
       {
         method: 'POST',
         headers: {
@@ -1279,7 +1364,7 @@ setInterval(async () => {
       console.error(`💥 Minting failed for ${item.uploadId}:`, err.message);
     }
   }
-}, 60000);
+}, 30000);
 
 app.get('/mint-queue', (req, res) => {
   
