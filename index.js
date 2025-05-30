@@ -23,6 +23,9 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 const execFileAsync = promisify(execFile);
 
+import generateFishImageRoute from './routes/generateFishImageRoute.js';
+
+
 const app = express();
 dotenv.config();
 
@@ -44,6 +47,7 @@ app.use(cors());
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.use('/', generateFishImageRoute);
 
 const TUSKY_API_KEY    = process.env.TUSKY_API_KEY;
 const TUSKY_VAULT_ID   = process.env.TUSKY_VAULT_ID;
@@ -396,7 +400,17 @@ async function createNewPlayer(id) {
     madness:   0,
     state:     1,
     casts:     0,
-    catch:     null
+    catch:     null,
+    // date: new Date().toLocaleString('en-US', {
+    //   year: 'numeric',
+    //   month: 'long',
+    //   day: 'numeric',
+    //   hour: '2-digit',
+    //   minute: '2-digit',
+    //   second: '2-digit',
+    //   hour12: true
+    // }),
+    utcTimestamp: Date.now()
   };
   db.data.players[id] = defaultState;
   await db.write();
