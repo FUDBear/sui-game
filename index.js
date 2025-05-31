@@ -8,7 +8,6 @@ import fetch from 'node-fetch';
 import sharp from 'sharp';
 import tus from 'tus-js-client';
 
-
 import { client, address, mintNFT, mintNFTTo } from './suiClient.js';
 import { db } from './db.js'
 import { fishDb } from './fishDb.js'
@@ -18,6 +17,7 @@ import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import { fileURLToPath } from 'url';
 import { Upload } from 'tus-js-client';
+import { generateFishImage } from './routes/generateFishImageRoute.js';
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -87,39 +87,29 @@ async function fetchBlobWithCurl(blobId) {
   return stdout;
 }
 
-async function composeFishImage(fishHash, fishName) {
+
+
+async function composeFishImage(fishHash, record) {
   console.log(`🎨 composing image layers for fishHash=${fishHash}`);
 
-  // 1) fetch fish sprite
-  console.log(`➡️  fetching fish from Walrus CDN: ${fishHash}`);
-  const fishResp = await fetch(`https://walrus.tusky.io/${fishHash}`);
-  if (!fishResp.ok) throw new Error(`Failed to fetch fish layer: ${fishResp.statusText}`);
-  const fishBuf = Buffer.from(await fishResp.arrayBuffer());
-  console.log(`✅  got ${fishBuf.length} bytes from Walrus/${fishHash}`);
+  try {
+    const result = await generateFishImage({
+      hash: fishHash,
+      fishName: record.type,
+      label: `${record.weight} lbs • ${record.length} in`,
+      event: record.event || ''  // Use the event from the record if it exists
+    });
 
-  // 2) fetch background via your proxy
-  console.log(`➡️  proxy fetching background via /tusky/${BACKGROUND_FILE_ID}`);
-  const bgResp = await fetch(`http://localhost:${PORT}/tusky/${BACKGROUND_FILE_ID}`);
-  if (!bgResp.ok) throw new Error(`Proxy download failed (${bgResp.status}): ${bgResp.statusText}`);
-  const bgBuf = Buffer.from(await bgResp.arrayBuffer());
-  console.log(`✅  got ${bgBuf.length} bytes from proxy/${BACKGROUND_FILE_ID}`);
+    // Write the buffer to a temp file
+    const tmpPath = path.join(os.tmpdir(), `${fishHash}.png`);
+    fs.writeFileSync(tmpPath, result.buffer);
+    console.log(`💾 composed PNG written to ${tmpPath}`);
 
-  // 3) composite everything
-  console.log(`🔧 layering background + fish...`);
-  const finalPng = await sharp(bgBuf)
-    .resize(2048, 2048)
-    .composite([
-      { input: fishBuf, gravity: 'center' }
-    ])
-    .png()
-    .toBuffer();
-
-  // 4) write out to temp file
-  const tmpPath = path.join(os.tmpdir(), `${fishHash}.png`);
-  fs.writeFileSync(tmpPath, finalPng);
-  console.log(`💾 composed PNG written to ${tmpPath}`);
-
-  return tmpPath;
+    return tmpPath;
+  } catch (err) {
+    console.error('Error generating fish image:', err);
+    throw err;
+  }
 }
 
 async function uploadToTusky(filePath) {
@@ -241,52 +231,88 @@ async function uploadToTusky(filePath) {
 async function mintRandomFishNFT() {
   console.log(`=== mintRandomFishNFT called ===`);
 
-  // 1️⃣ pick a random non-junk fish
-  const fishDbRaw = JSON.parse(fs.readFileSync(FISH_JSON, 'utf-8')).fish;
-  const keys      = Object.keys(fishDbRaw);
-  let choice, data;
-  do {
-    choice = keys[Math.floor(Math.random() * keys.length)];
-    data   = fishDbRaw[choice];
-  } while (!data['base-image'] || data['base-image'] === '-');
-  console.log(`🐟 selected fish: ${choice} (hash: ${data['base-image']})`);
+  try {
+    // 1️⃣ pick a random non-junk fish
+    const fishDbRaw = JSON.parse(fs.readFileSync(FISH_JSON, 'utf-8')).fish;
+    const keys      = Object.keys(fishDbRaw);
+    let choice, data;
+    do {
+      choice = keys[Math.floor(Math.random() * keys.length)];
+      data   = fishDbRaw[choice];
+    } while (!data['base-image'] || data['base-image'] === '-');
+    console.log(`🐟 selected fish: ${choice} (hash: ${data['base-image']})`);
 
-  // 2️⃣ compose the layered image
-  const tmpFile = await composeFishImage(data['base-image'], `${choice}`);
-  console.log(`☁️  composed image ready at ${tmpFile}`);
+    // 2️⃣ Roll random metrics
+    const metrics = rollFishMetrics(data);
+    console.log(`📏 Rolled metrics:`, metrics);
 
-  // 3️⃣ upload it
-  console.log(`☁️  uploading composed image to Tusky…`);
-  const fileId = await uploadToTusky(tmpFile);
-  console.log(`🔗 uploaded, received blobId=${fileId}`);
-  const url = `https://walrus.tusky.io/${fileId}`;
+    // 3️⃣ Randomly select an event (or none)
+    const events = ['blood', 'frozen', 'nightmare', 'toxic', null];
+    const event = events[Math.floor(Math.random() * events.length)];
+    console.log(`🎲 Selected event:`, event || 'none');
 
-  // 4️⃣ mint the NFT on chain
-  console.log(`🚀 minting NFT on chain…`);
-  const result = await mintNFT({
-    name:        choice,
-    description: `Layered NFT of a ${choice}`,
-    imageUrl:    url,
-    thumbnailUrl:url,
-  });
-  console.log(`🏷️  mint complete, digest=${result.digest}`);
+    // 4️⃣ compose the layered image
+    const record = {
+      type: choice,
+      weight: metrics.weight,
+      length: metrics.length,
+      event: event
+    };
+    console.log(`🎨 Composing image with record:`, record);
+    
+    const tmpFile = await composeFishImage(data['base-image'], record);
+    console.log(`☁️  composed image ready at ${tmpFile}`);
 
-  return {
-    type:          choice,
-    digest:        result.digest,
-    objectChanges: result.objectChanges,
-  };
+    // 5️⃣ upload it
+    console.log(`☁️  uploading composed image to Tusky…`);
+    const fileId = await uploadToTusky(tmpFile);
+    console.log(`🔗 uploaded, received blobId=${fileId}`);
+    const url = `https://walrus.tusky.io/${fileId}`;
+
+    // 6️⃣ mint the NFT on chain
+    console.log(`🚀 minting NFT on chain…`);
+    const result = await mintNFT({
+      name:        choice,
+      description: `A ${choice}${event ? ` caught during a ${event} event` : ''} weighing ${metrics.weight} lbs and measuring ${metrics.length} inches`,
+      imageUrl:    url,
+      thumbnailUrl:url,
+    });
+    console.log(`🏷️  mint complete, digest=${result.digest}`);
+
+    return {
+      type:          choice,
+      digest:        result.digest,
+      objectChanges: result.objectChanges,
+      event:         event,
+      weight:        metrics.weight,
+      length:        metrics.length
+    };
+  } catch (err) {
+    console.error('Error in mintRandomFishNFT:', err);
+    throw err; // Re-throw to be handled by the endpoint
+  }
 }
 
 app.post('/mint-fish', async (req, res) => {
   console.log('=== /mint-fish called ===');
   try {
-    const { type, digest, objectChanges } = await mintRandomFishNFT();
-    console.log('=== /mint-fish returning success ===');
-    res.json({ success: true, fishType: type, digest, objectChanges });
+    const result = await mintRandomFishNFT();
+    console.log('=== /mint-fish returning success ===', result);
+    res.json({ 
+      success: true, 
+      fishType: result.type, 
+      digest: result.digest, 
+      objectChanges: result.objectChanges,
+      event: result.event,
+      weight: result.weight,
+      length: result.length
+    });
   } catch (err) {
     console.error('=== /mint-fish error ===', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ 
+      error: err.message,
+      stack: err.stack // Include stack trace for debugging
+    });
   }
 });
 
@@ -1237,7 +1263,7 @@ async function mintCaughtFishNFTFor(playerId, recipient) {
   }
 
   // compose & upload
-  const tmp    = await composeFishImage(rec.catch.stats['base-image']);
+  const tmp    = await composeFishImage(rec.catch.stats['base-image'], rec);
   const blobId = await uploadToTusky(tmp);
   const url    = `https://walrus.tusky.io/${blobId}`;
 
@@ -1300,7 +1326,7 @@ app.post('/mint-caught-fish', async (req, res) => {
     }
     const hash = fishStats['base-image'];
 
-    const tmp = await composeFishImage(hash, record.type);
+    const tmp = await composeFishImage(hash, record);
     const stats = fs.statSync(tmp);
     const stream = fs.createReadStream(tmp);
 
@@ -1395,4 +1421,42 @@ app.get('/mint-queue', (req, res) => {
     queueLength: mintQueue.length,
     items: queueInfo
   });
+});
+
+app.post('/test-compose-fish', async (req, res) => {
+  try {
+    const { hash, record } = req.body;
+    
+    if (!hash) {
+      return res.status(400).json({ error: 'Missing required body parameter: hash' });
+    }
+
+    if (!record) {
+      return res.status(400).json({ error: 'Missing required body parameter: record' });
+    }
+
+    // Clean the hash of any query parameters that might have been accidentally included
+    const cleanHash = hash.split('&')[0];
+    
+    console.log(`🧪 Testing composeFishImage with hash=${cleanHash} and record:`, record);
+    const tmpPath = await composeFishImage(cleanHash, record);
+    
+    // Read the generated file and send it as a response
+    const imageBuffer = fs.readFileSync(tmpPath);
+    
+    // Clean up the temp file
+    fs.unlinkSync(tmpPath);
+    
+    res.setHeader('Content-Type', 'image/png');
+    res.send(imageBuffer);
+  } catch (err) {
+    console.error('Error in /test-compose-fish:', err);
+    res.status(500).json({ 
+      error: err.message,
+      details: {
+        hash: req.body.hash,
+        record: req.body.record
+      }
+    });
+  }
 });
