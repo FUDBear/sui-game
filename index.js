@@ -90,14 +90,14 @@ async function fetchBlobWithCurl(blobId) {
 
 
 async function composeFishImage(fishHash, record) {
-  console.log(`🎨 composing image layers for fishHash=${fishHash}`);
+  console.log(`🎨 composing image layers for fishHash=${fishHash}, record:`, record);
 
   try {
     const result = await generateFishImage({
       hash: fishHash,
       fishName: record.type,
       label: `${record.weight} lbs • ${record.length} in`,
-      event: record.event || ''  // Use the event from the record if it exists
+      event: record.event || ''  // Ensure event is always a string
     });
 
     // Write the buffer to a temp file
@@ -256,7 +256,7 @@ async function mintRandomFishNFT() {
       type: choice,
       weight: metrics.weight,
       length: metrics.length,
-      event: event
+      event: event || ''  // Ensure event is always a string, even if null
     };
     console.log(`🎨 Composing image with record:`, record);
     
