@@ -858,7 +858,8 @@ async function gameLoop() {
         at:       catchRecord.at,
         weight:   catchRecord.weight,
         length:   catchRecord.length,
-        minted:   catchRecord.minted
+        minted:   catchRecord.minted,
+        event:    catchRecord.event
       });
     }
 
