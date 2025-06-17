@@ -27,7 +27,7 @@ import generateFishImageRoute from './routes/generateFishImageRoute.js';
 
 
 const app = express();
-dotenv.config();
+dotenv.config(); 
 
 
 // ——— set up persistent catchHistory DB ———
