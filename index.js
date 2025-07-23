@@ -739,6 +739,7 @@ app.get('/history', (_, res) => res.json(catchHistory))
 const phases = ['dawn', 'day', 'dusk', 'night'];
 let currentPhaseIndex = 0; // start at 'dawn'
 let currentHour = 0;
+let lastGameLoopTime = Date.now(); // Track when the last game loop ran
 const playerCatches = [];
 const unclaimedCatches = [];
 const catchHistory = [];
@@ -758,6 +759,9 @@ async function gameLoop() {
   const currentHourSnapshot  = currentHour;
   const currentPhaseSnapshot = lastPhase;
   const currentPhaseHour     = (currentHourSnapshot % 6) + 1;  // 1–6
+  
+  // Update the last game loop time
+  lastGameLoopTime = Date.now();
 
   // 1) pull & clear pending casts
   const castsToProcess = [...playerCasts];
@@ -1049,11 +1053,16 @@ app.get('/catches', (req, res) => {
 
 // ─── State endpoint ───
 app.get('/state', (req, res) => {
+  const now = Date.now();
+  const timeSinceLastLoop = now - lastGameLoopTime;
+  const timeUntilNextHour = Math.max(0, 20000 - timeSinceLastLoop); // 20 seconds = 20000ms
+  
   res.json({
     phase: lastPhase,
     event: lastEvent,
     hour: currentHour,
     catches: playerCatches,
+    timeUntilNextHour: Math.ceil(timeUntilNextHour / 1000), // Convert to seconds
   });
 });
 
