@@ -1403,9 +1403,18 @@ setInterval(async () => {
         });
         console.log(`✅ Minted NFT for ${item.playerId}: ${result.digest}`);
 
+        // Find all catches for this player and mark the specific one as minted
         const playerCatches = fishCatchesData.filter(c => c.playerId === item.playerId);
         if (item.index >= 0 && item.index < playerCatches.length) {
-          playerCatches[item.index].minted = true;
+          // Find the actual index in the main fishCatchesData array
+          const actualIndex = fishCatchesData.findIndex(c => 
+            c.playerId === item.playerId && 
+            c.type === playerCatches[item.index].type &&
+            c.at === playerCatches[item.index].at
+          );
+          if (actualIndex >= 0) {
+            fishCatchesData[actualIndex].minted = true;
+          }
         }
 
         mintQueue.splice(mintQueue.indexOf(item), 1);
