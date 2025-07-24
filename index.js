@@ -1442,6 +1442,13 @@ app.get('/mint-queue', (req, res) => {
   });
 });
 
+// Endpoint to cancel and clear the mint queue
+app.post('/mint-queue/cancel', (req, res) => {
+  mintQueue.length = 0;
+  res.json({ success: true, message: 'Mint queue cleared.' });
+});
+
+
 app.post('/test-compose-fish', async (req, res) => {
   try {
     const { hash, record } = req.body;
