@@ -1402,6 +1402,7 @@ setInterval(async () => {
           imageUrl: url,
           thumbnailUrl: url
         });
+        console.log('🧾 Full mintNFTTo result:', JSON.stringify(result, null, 2));
         console.log(`✅ Minted NFT for ${item.playerId}: ${result.digest}`);
 
         // Extract the created object ID from the transaction
