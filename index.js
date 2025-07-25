@@ -1404,12 +1404,25 @@ setInterval(async () => {
         });
         console.log(`✅ Minted NFT for ${item.playerId}: ${result.digest}`);
 
-        // Store the completed mint with NFT hash
+        // Extract the created object ID from the transaction
+        let nftObjectId = null;
+        if (result.objectChanges) {
+          const createdObject = result.objectChanges.find(change => 
+            change.type === 'created' && change.objectType?.includes('::nft::Nft')
+          );
+          if (createdObject) {
+            nftObjectId = createdObject.objectId;
+            console.log(`🎯 NFT Object ID: ${nftObjectId}`);
+          }
+        }
+
+        // Store the completed mint with both transaction hash and object ID
         completedMints.push({
           uploadId: item.uploadId,
           playerId: item.playerId,
           index: item.index,
           nftHash: result.digest,
+          nftObjectId: nftObjectId,
           completedAt: Date.now()
         });
 
@@ -1472,6 +1485,7 @@ app.get('/mint-status/:uploadId', (req, res) => {
         status: 'completed',
         uploadId: uploadId,
         nftHash: completedMint.nftHash,
+        nftObjectId: completedMint.nftObjectId,
         playerId: completedMint.playerId,
         index: completedMint.index
       });
