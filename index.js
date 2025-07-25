@@ -1407,18 +1407,30 @@ setInterval(async () => {
 
         // Fetch transaction effects to get the created objectId
         let nftObjectId = null;
-        try {
-          const effects = await client.getTransactionBlock({ digest: result.digest });
-          console.log('🧾 Transaction effects:', JSON.stringify(effects, null, 2));
-          if (effects.objectChanges) {
-            const createdObject = effects.objectChanges.find(change => change.type === 'created');
-            if (createdObject) {
-              nftObjectId = createdObject.objectId;
-              console.log(`🎯 NFT Object ID: ${nftObjectId}`);
+        const maxAttempts = 15;
+        const delayMs = 2000;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const effects = await client.getTransactionBlock({ digest: result.digest });
+            console.log('🧾 Transaction effects:', JSON.stringify(effects, null, 2));
+            if (effects.objectChanges) {
+              const createdObject = effects.objectChanges.find(change => change.type === 'created');
+              if (createdObject) {
+                nftObjectId = createdObject.objectId;
+                console.log(`🎯 NFT Object ID: ${nftObjectId}`);
+                break;
+              }
+            }
+            // If we got here, no object yet, but transaction exists
+            break;
+          } catch (e) {
+            if (attempt === maxAttempts) {
+              console.error('Failed to fetch transaction effects after max attempts:', e);
+            } else {
+              console.log(`⏳ Transaction not found yet (attempt ${attempt}/${maxAttempts}), retrying in ${delayMs / 1000}s...`);
+              await new Promise(res => setTimeout(res, delayMs));
             }
           }
-        } catch (e) {
-          console.error('Failed to fetch transaction effects:', e);
         }
 
         // Store the completed mint with both transaction hash and object ID
