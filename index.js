@@ -1411,7 +1411,15 @@ setInterval(async () => {
         const delayMs = 2000;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           try {
-            const effects = await client.getTransactionBlock({ digest: result.digest });
+            const effects = await client.getTransactionBlock({ 
+              digest: result.digest,
+              options: {
+                showEffects: true,
+                showObjectChanges: true,
+                showInput: false,
+                showEvents: false
+              }
+            });
             console.log('🧾 Transaction effects:', JSON.stringify(effects, null, 2));
             if (effects.objectChanges) {
               const createdObject = effects.objectChanges.find(change => change.type === 'created');
