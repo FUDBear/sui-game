@@ -1293,6 +1293,7 @@ async function mintCaughtFishNFTFor(playerId, recipient) {
 }
 
 const mintQueue = [];
+const completedMints = []; // Track completed mints with their NFT hashes
 
 app.post('/mint-caught-fish', async (req, res) => {
   console.log('=== /mint-caught-fish called with', req.body);
@@ -1403,6 +1404,15 @@ setInterval(async () => {
         });
         console.log(`✅ Minted NFT for ${item.playerId}: ${result.digest}`);
 
+        // Store the completed mint with NFT hash
+        completedMints.push({
+          uploadId: item.uploadId,
+          playerId: item.playerId,
+          index: item.index,
+          nftHash: result.digest,
+          completedAt: Date.now()
+        });
+
         // Find all catches for this player and mark the specific one as minted
         const playerCatches = fishCatchesData.filter(c => c.playerId === item.playerId);
         if (item.index >= 0 && item.index < playerCatches.length) {
@@ -1437,7 +1447,7 @@ app.get('/mint-queue', (req, res) => {
   }));
 
   res.json({
-    queueLength: mintQueue.length,
+    queueLength: mintQueue.length, 
     items: queueInfo
   });
 });
@@ -1446,6 +1456,37 @@ app.get('/mint-queue', (req, res) => {
 app.post('/mint-queue/cancel', (req, res) => {
   mintQueue.length = 0;
   res.json({ success: true, message: 'Mint queue cleared.' });
+});
+
+// Endpoint to check minting status and get NFT hash
+app.get('/mint-status/:uploadId', (req, res) => {
+  const { uploadId } = req.params;
+  const mintItem = mintQueue.find(item => item.uploadId === uploadId);
+  
+  if (!mintItem) {
+    // Check if it was already completed
+    const completedMint = completedMints.find(mint => mint.uploadId === uploadId);
+    if (completedMint) {
+      res.json({
+        success: true,
+        status: 'completed',
+        uploadId: uploadId,
+        nftHash: completedMint.nftHash,
+        playerId: completedMint.playerId,
+        index: completedMint.index
+      });
+    } else {
+      res.json({ success: false, status: 'not_found' });
+    }
+  } else {
+    res.json({
+      success: true,
+      status: 'queued',
+      uploadId: uploadId,
+      playerId: mintItem.playerId,
+      index: mintItem.index
+    });
+  }
 });
 
 
