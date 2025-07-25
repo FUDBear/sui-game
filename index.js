@@ -1405,16 +1405,20 @@ setInterval(async () => {
         console.log('🧾 Full mintNFTTo result:', JSON.stringify(result, null, 2));
         console.log(`✅ Minted NFT for ${item.playerId}: ${result.digest}`);
 
-        // Extract the created object ID from the transaction
+        // Fetch transaction effects to get the created objectId
         let nftObjectId = null;
-        if (result.objectChanges) {
-          const createdObject = result.objectChanges.find(change => 
-            change.type === 'created' && change.objectType?.includes('::nft::Nft')
-          );
-          if (createdObject) {
-            nftObjectId = createdObject.objectId;
-            console.log(`🎯 NFT Object ID: ${nftObjectId}`);
+        try {
+          const effects = await client.getTransactionBlock({ digest: result.digest });
+          console.log('🧾 Transaction effects:', JSON.stringify(effects, null, 2));
+          if (effects.objectChanges) {
+            const createdObject = effects.objectChanges.find(change => change.type === 'created');
+            if (createdObject) {
+              nftObjectId = createdObject.objectId;
+              console.log(`🎯 NFT Object ID: ${nftObjectId}`);
+            }
           }
+        } catch (e) {
+          console.error('Failed to fetch transaction effects:', e);
         }
 
         // Store the completed mint with both transaction hash and object ID
