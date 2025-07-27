@@ -1410,8 +1410,7 @@ setInterval(async () => {
       const info = await fResp.json();
       if (info.blobId && info.blobId !== 'unknown') {
         const url = `https://walrus.tusky.io/${info.blobId}`;
-        const result = await mintNFTTo({
-          recipient: item.walletAddress,
+        const result = await mintNFTTo(item.walletAddress, {
           name: item.fishType,
           description: item.description,
           imageUrl: url,
@@ -1523,8 +1522,42 @@ app.get('/mint-queue', (req, res) => {
 
 // Endpoint to cancel and clear the mint queue
 app.post('/mint-queue/cancel', (req, res) => {
-  mintQueue.length = 0;
-  res.json({ success: true, message: 'Mint queue cleared.' });
+  try {
+    const previousLength = mintQueue.length;
+    mintQueue.length = 0;
+    console.log(`🗑️ Mint queue cleared: ${previousLength} items removed`);
+    res.json({ 
+      success: true, 
+      message: 'Mint queue cleared.',
+      itemsCleared: previousLength
+    });
+  } catch (error) {
+    console.error('Error clearing mint queue:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to clear mint queue' 
+    });
+  }
+});
+
+// Also allow GET for easier testing
+app.get('/mint-queue/cancel', (req, res) => {
+  try {
+    const previousLength = mintQueue.length;
+    mintQueue.length = 0;
+    console.log(`🗑️ Mint queue cleared via GET: ${previousLength} items removed`);
+    res.json({ 
+      success: true, 
+      message: 'Mint queue cleared.',
+      itemsCleared: previousLength
+    });
+  } catch (error) {
+    console.error('Error clearing mint queue:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to clear mint queue' 
+    });
+  }
 });
 
 // Endpoint to check minting status and get NFT hash
