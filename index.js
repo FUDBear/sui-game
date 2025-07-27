@@ -838,7 +838,7 @@ async function gameLoop() {
     });
 
     if (!cumulative.length) {
-      console.warn(`⚠️ No fish in personal pool for ${rec.playerId}, skipping…`);
+      console.warn(`⚠️ No fish in personal pool for ${rec.googleSub}, skipping…`);
       continue;
     }
 
@@ -867,7 +867,7 @@ async function gameLoop() {
     // ONLY record non-junk (i.e. real fish) into fishCatchesData
     if (winner.stats.rarity !== 'junk') {
       fishCatchesData.push({
-        playerId: catchRecord.playerId,
+        googleSub: catchRecord.googleSub,
         type:     catchRecord.catch.type,
         at:       catchRecord.at,
         weight:   catchRecord.weight,
@@ -1180,7 +1180,7 @@ async function recordCatchHistory(catchRecord) {
     : '';
   
   const line = 
-    `${catchRecord.playerId}: ${catchRecord.catch.type}` +
+    `${catchRecord.googleSub}: ${catchRecord.catch.type}` +
     `${weightSegment}` +
     `${eventSegment} @${time}`;
 
@@ -1192,7 +1192,7 @@ async function recordCatchHistory(catchRecord) {
   await catchDb.write();
 
   // console log
-  console.log(`🎣 ${catchRecord.playerId} caught ${catchRecord.catch.type}${weightSegment}`);
+  console.log(`🎣 ${catchRecord.googleSub} caught ${catchRecord.catch.type}${weightSegment}`);
 }
 
 app.get('/time', (req, res) => {
@@ -1216,9 +1216,9 @@ app.get('/fish-catches', (req, res) => {
 });
 
 // GET all fish catches for a specific player
-app.get('/fish-catches/:playerId', (req, res) => {
-  const { playerId } = req.params;
-  const matches = fishCatchesData.filter(c => c.playerId === playerId);
+app.get('/fish-catches/:googleSub', (req, res) => {
+  const { googleSub } = req.params;
+  const matches = fishCatchesData.filter(c => c.googleSub === googleSub);
   res.json(matches);
 });
 
@@ -1252,7 +1252,7 @@ app.post('/auto-catch-all', async (_req, res) => {
 
       // record in memory & history
       fishCatchesData.push({
-        playerId: player.google_sub, type, at: catchRecord.at, weight, length
+        googleSub: player.google_sub, type, at: catchRecord.at, weight, length
       });
       unclaimedCatches.push(catchRecord);
       await recordCatchHistory(catchRecord);
@@ -1276,11 +1276,11 @@ app.post('/auto-catch-all', async (_req, res) => {
 });
 
 // 1️⃣ Helper: mints the caught fish NFT for a player→recipient
-async function mintCaughtFishNFTFor(playerId, recipient) {
+async function mintCaughtFishNFTFor(googleSub, recipient) {
   // find the first un-minted catch
-  const rec = fishCatchesData.find(c => c.playerId === playerId);
+  const rec = fishCatchesData.find(c => c.googleSub === googleSub);
   if (!rec) {
-    throw new Error(`No caught fish found for player "${playerId}"`);
+    throw new Error(`No caught fish found for player "${googleSub}"`);
   }
 
   // compose & upload
@@ -1308,11 +1308,11 @@ const completedMints = []; // Track completed mints with their NFT hashes
 
 app.post('/mint-caught-fish', async (req, res) => {
   console.log('=== /mint-caught-fish called with', req.body);
-  const { googleSub, index } = req.body;
+  const { googleSub, walletAddress, index } = req.body;
 
-  if (typeof googleSub !== 'string' || typeof index !== 'number') {
+  if (typeof googleSub !== 'string' || typeof walletAddress !== 'string' || typeof index !== 'number') {
     return res.status(400).json({
-      error: 'googleSub (string) and index (number) required'
+      error: 'googleSub (string), walletAddress (string), and index (number) required'
     });
   }
 
@@ -1322,7 +1322,7 @@ app.post('/mint-caught-fish', async (req, res) => {
 
   mintLocks.add(googleSub);
 
-  const playerCatches = fishCatchesData.filter(c => c.playerId === googleSub);
+  const playerCatches = fishCatchesData.filter(c => c.googleSub === googleSub);
   if (playerCatches.length === 0) {
     return res.status(404).json({ error: `No catches found for player ${googleSub}` });
   }
@@ -1340,7 +1340,7 @@ app.post('/mint-caught-fish', async (req, res) => {
     return res.status(400).json({ error: 'Junk fish cannot be minted' });
   }
 
-  mintLocks.add(playerId);
+  mintLocks.add(googleSub);
 
   try {
     await fishDb.read();
@@ -1355,7 +1355,7 @@ app.post('/mint-caught-fish', async (req, res) => {
     const stream = fs.createReadStream(tmp);
 
     const parentId = "11be5290-3544-4bc2-ace1-74ab7d6e6621";
-    const name = `${record.type} | ${record.weight} Lbs | ${record.length} Inch - ${record.playerId} @${record.at}` ;
+    const name = `${record.type} | ${record.weight} Lbs | ${record.length} Inch - ${record.googleSub} @${record.at}` ;
 
     const upResp = await fetch(
       `https://api.tusky.io/uploads?vaultId=${TUSKY_VAULT_ID}&parentId=${parentId}&filename=${name}`,
@@ -1381,6 +1381,7 @@ app.post('/mint-caught-fish', async (req, res) => {
 
     mintQueue.push({
       googleSub,
+      walletAddress,
       index,
       fishType: record.type,
       uploadId,
@@ -1409,7 +1410,8 @@ setInterval(async () => {
       const info = await fResp.json();
       if (info.blobId && info.blobId !== 'unknown') {
         const url = `https://walrus.tusky.io/${info.blobId}`;
-        const result = await mintNFTTo(item.googleSub, {
+        const result = await mintNFTTo({
+          recipient: item.walletAddress,
           name: item.fishType,
           description: item.description,
           imageUrl: url,
@@ -1472,6 +1474,7 @@ setInterval(async () => {
         completedMints.push({
           uploadId: item.uploadId,
           googleSub: item.googleSub,
+          walletAddress: item.walletAddress,
           index: item.index,
           nftHash: result.digest,
           nftObjectId: nftObjectId,
@@ -1479,11 +1482,11 @@ setInterval(async () => {
         });
 
         // Find all catches for this player and mark the specific one as minted
-        const playerCatches = fishCatchesData.filter(c => c.playerId === item.googleSub);
+        const playerCatches = fishCatchesData.filter(c => c.googleSub === item.googleSub);
         if (item.index >= 0 && item.index < playerCatches.length) {
           // Find the actual index in the main fishCatchesData array
           const actualIndex = fishCatchesData.findIndex(c => 
-            c.playerId === item.googleSub && 
+            c.googleSub === item.googleSub && 
             c.type === playerCatches[item.index].type &&
             c.at === playerCatches[item.index].at
           );
@@ -1504,6 +1507,7 @@ app.get('/mint-queue', (req, res) => {
   
   const queueInfo = mintQueue.map(item => ({
     googleSub: item.googleSub,
+    walletAddress: item.walletAddress,
     fishType: item.fishType,
     uploadId: item.uploadId,
     createdAt: item.createdAt,
@@ -1538,7 +1542,8 @@ app.get('/mint-status/:uploadId', (req, res) => {
         uploadId: uploadId,
         nftHash: completedMint.nftHash,
         nftObjectId: completedMint.nftObjectId,
-        playerId: completedMint.playerId,
+        googleSub: completedMint.googleSub,
+        walletAddress: completedMint.walletAddress,
         index: completedMint.index
       });
     } else {
@@ -1549,7 +1554,8 @@ app.get('/mint-status/:uploadId', (req, res) => {
       success: true,
       status: 'queued',
       uploadId: uploadId,
-      playerId: mintItem.playerId,
+      googleSub: mintItem.googleSub,
+      walletAddress: mintItem.walletAddress,
       index: mintItem.index
     });
   }
