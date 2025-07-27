@@ -9,6 +9,7 @@
   "dependencies": {
     "@mysten/sui": "^1.29.0",
     "@suiet/wallet-kit": "^0.3.7",
+    "@supabase/supabase-js": "^2.52.1",
     "canvas": "^3.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",

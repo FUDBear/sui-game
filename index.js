@@ -9,10 +9,10 @@ import sharp from 'sharp';
 import tus from 'tus-js-client';
 
 import { client, address, mintNFT, mintNFTTo } from './suiClient.js';
-import { db } from './db.js'
 import { fishDb } from './fishDb.js'
 import { cardsDb } from './cardsDB.js'
 import { getBonusesFromCast, applyFishWeightBonuses, applyEventBonuses, applyRarityWeightBonuses, applyBaseFishRateBonus } from './castModifiers.js';
+import { PlayerService } from './playerService.js';
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import { fileURLToPath } from 'url';
@@ -47,7 +47,7 @@ app.use(cors());
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use('/', generateFishImageRoute);
+app.use('/generate-fish-image', generateFishImageRoute);
 
 const TUSKY_API_KEY    = process.env.TUSKY_API_KEY;
 const TUSKY_VAULT_ID   = process.env.TUSKY_VAULT_ID;
@@ -415,104 +415,100 @@ app.post('/mint-fish', async (_req, res) => {
 });
 
 
-async function createNewPlayer(id) {
-  await db.read();
-  const defaultState = {
-    activeHand: [-1,-1,-1],
-    hand:      await generateRandomDeck(3),
-    deckCount: 20,
-    deck:      await generateRandomDeck(20),
-    resetDeck: true,
-    madness:   0,
-    state:     1,
-    casts:     0,
-    catch:     null,
-    // date: new Date().toLocaleString('en-US', {
-    //   year: 'numeric',
-    //   month: 'long',
-    //   day: 'numeric',
-    //   hour: '2-digit',
-    //   minute: '2-digit',
-    //   second: '2-digit',
-    //   hour12: true
-    // }),
-    utcTimestamp: Date.now()
-  };
-  db.data.players[id] = defaultState;
-  await db.write();
-  return defaultState;
+async function createNewPlayer(googleSub) {
+  return await PlayerService.initializePlayer(googleSub);
 }
 
 // POST /player/init → ensure a player exists, return their state
 app.post('/player/init', async (req, res) => {
-  const { playerId } = req.body;
-  if (!playerId) {
-    return res.status(400).json({ error: 'playerId required' });
-  }
-  await db.read();
-  const players = db.data.players;
-
-  // if they don't exist yet, create them
-  if (!players[playerId]) {
-    const newState = await createNewPlayer(playerId);
-    return res.json({ playerId, state: newState, created: true });
+  console.log('🎯 /player/init called with body:', req.body);
+  const { googleSub } = req.body;
+  if (!googleSub) {
+    console.log('❌ No googleSub provided');
+    return res.status(400).json({ error: 'googleSub required' });
   }
 
-  // otherwise just return the existing state
-  return res.json({ playerId, state: players[playerId], created: false });
+  console.log('🔍 Looking for player with googleSub:', googleSub);
+  try {
+    const player = await PlayerService.ensurePlayer(googleSub);
+    console.log('✅ Player found/created:', player);
+    return res.json({ 
+      googleSub, 
+      state: player, 
+      created: !player.utcTimestamp || Date.now() - player.utcTimestamp < 5000 // Roughly 5 seconds
+    });
+  } catch (error) {
+    console.error('💥 Error initializing player:', error);
+    console.error('💥 Error stack:', error.stack);
+    return res.status(500).json({ error: 'Failed to initialize player' });
+  }
 });
 
 app.get('/players', async (req, res) => {
-  await db.read();
-  res.json(db.data.players);
+  try {
+    const players = await PlayerService.getAllPlayers();
+    res.json(players);
+  } catch (error) {
+    console.error('Error fetching players:', error);
+    res.status(500).json({ error: 'Failed to fetch players' });
+  }
 });
 
 // -- DB -- //
-app.get('/player/:id', async (req, res) => {
-  await db.read();
-  const id = req.params.id;
-  const player = db.data.players[id];
+app.get('/player/:googleSub', async (req, res) => {
+  try {
+    const googleSub = req.params.googleSub;
+    const player = await PlayerService.getPlayer(googleSub);
 
-  if (!player) {
-    return res
-      .status(404)
-      .json({ error: `Player "${id}" not found.` });
+    if (!player) {
+      return res
+        .status(404)
+        .json({ error: `Player "${googleSub}" not found.` });
+    }
+
+    res.json({ googleSub, state: player });
+  } catch (error) {
+    console.error('Error fetching player:', error);
+    res.status(500).json({ error: 'Failed to fetch player' });
   }
-
-  res.json({ id, state: player });
 });
 
 
 // Update a player's state
-app.post('/player/:id', async (req, res) => {
-  await db.read()
-  const id = req.params.id
-  const players = db.data.players
-
-  // merge whatever you send in { wins, plays, … }
-  players[id] = { ...(players[id] || {}), ...req.body }
-  await db.write()
-
-  res.json({ id, state: players[id] })
-})
+app.post('/player/:googleSub', async (req, res) => {
+  try {
+    const googleSub = req.params.googleSub;
+    const updates = req.body;
+    
+    const updatedPlayer = await PlayerService.updatePlayer(googleSub, updates);
+    res.json({ googleSub, state: updatedPlayer });
+  } catch (error) {
+    console.error('Error updating player:', error);
+    res.status(500).json({ error: 'Failed to update player' });
+  }
+});
 
 /**
- * GET /player-info/:playerId
+ * GET /player-info/:googleSub
  * Returns the full player object (hand, deck, state, etc.)
  */
-app.get('/player-info/:playerId', async (req, res) => {
-  const { playerId } = req.params;
-  if (!playerId) {
-    return res.status(400).json({ error: 'playerId required' });
+app.get('/player-info/:googleSub', async (req, res) => {
+  const { googleSub } = req.params;
+  if (!googleSub) {
+    return res.status(400).json({ error: 'googleSub required' });
   }
 
-  await db.read();
-  const player = db.data.players[playerId];
-  if (!player) {
-    return res.status(404).json({ error: `Player "${playerId}" not found.` });
-  }
+  try {
+    const player = await PlayerService.getPlayer(googleSub);
+    if (!player) {
+      return res.status(404).json({ error: `Player "${googleSub}" not found.` });
+    }
 
-  return res.json({ playerId, ...player });
+    return res.json({ googleSub, ...player });
+  } catch (error) {
+    console.error('Error fetching player info:', error);
+    return res.status(500).json({ error: 'Failed to fetch player info' });
+  }
 });
 
 /**
@@ -522,27 +518,29 @@ app.get('/player-info/:playerId', async (req, res) => {
  *  • a fresh  3‐card `hand`
  */
 app.post('/players/refill-decks', async (req, res) => {
-  // 1) Reload card pool & players DB
-  await cardsDb.read();
-  await db.read();
+  try {
+    // 1) Reload card pool & get all players
+    await cardsDb.read();
+    const players = await PlayerService.getAllPlayers();
 
-  const players = db.data.players;
-  for (const playerId of Object.keys(players)) {
-    // brand-new deck of 20
-    const newDeck = await generateRandomDeck(20);
-    players[playerId].deck      = newDeck;
-    players[playerId].deckCount = newDeck.length;
+    // 2) Update each player's deck and hand
+    for (const player of players) {
+      const newDeck = await generateRandomDeck(20);
+      const newHand = await generateRandomDeck(3);
+      
+      await PlayerService.updatePlayer(player.google_sub, {
+        deck: newDeck,
+        deckCount: newDeck.length,
+        hand: newHand
+      });
+    }
 
-    // brand-new hand of 3
-    const newHand = await generateRandomDeck(3);
-    players[playerId].hand = newHand;
+    // 3) Return success
+    res.json({ success: true, message: 'All player decks refilled' });
+  } catch (error) {
+    console.error('Error refilling decks:', error);
+    res.status(500).json({ error: 'Failed to refill decks' });
   }
-
-  // 2) Persist in one shot
-  await db.write();
-
-  // 3) Return updated map
-  res.json({ success: true, players });
 });
 
 
@@ -565,7 +563,7 @@ app.get('/fish/:type', async (req, res) => {
 /**
  * Build a random deck of `size` card‐indices based on your cards.json
  */
-async function generateRandomDeck(size = 20) {
+export async function generateRandomDeck(size = 20) {
   // re-read to get the latest data
   await cardsDb.read();
 
@@ -629,104 +627,115 @@ function playercast(castArray) {
 }
 
 app.post('/playercast', async (req, res) => {
-  const { playerId, cast } = req.body;
+  const { googleSub, cast } = req.body;
 
   // 0) Basic validation
-  if (!playerId || !Array.isArray(cast)) {
-    return res.status(400).json({ error: 'playerId and cast[] required' });
+  if (!googleSub || !Array.isArray(cast)) {
+    return res.status(400).json({ error: 'googleSub and cast[] required' });
   }
 
-  // 0.5) Ensure the player exists
-  await db.read();
-  const player = db.data.players[playerId];
-  if (!player) {
-    return res.status(400).json({ error: `Player "${playerId}" not found.` });
-  }
-
-  // 0.75) Verify cast matches hand
-  if (cast.length !== player.hand.length) {
-    return res.status(400).json({ error: `Cast length must be ${player.hand.length}` });
-  }
-  for (let i = 0; i < cast.length; i++) {
-    if (cast[i] > -1 && cast[i] !== player.hand[i]) {
-      return res
-        .status(400)
-        .json({ error: `Slot ${i} must be ${player.hand[i]}, got ${cast[i]}` });
+  try {
+    // 0.5) Ensure the player exists
+    const player = await PlayerService.getPlayer(googleSub);
+    if (!player) {
+      return res.status(400).json({ error: `Player "${googleSub}" not found.` });
     }
-  }
 
-  // 1) Prevent duplicate pending casts
-  if (playerCasts.some(c => c.playerId === playerId)) {
-    return res.status(400).json({ error: 'You already have a pending cast.' });
-  }
-
-  // 2) Prevent new cast if unclaimed still exist
-  if (unclaimedCatches.some(c => c.playerId === playerId)) {
-    return res.status(400).json({ error: 'Claim your previous catch first.' });
-  }
-
-  // 3) Queue the cast
-  const bonuses = getBonusesFromCast(cast);
-  const record = {
-    playerId,
-    cast,
-    depth: pickDepth(),
-    bonuses,
-    timestamp: new Date().toISOString(),
-  };
-  playerCasts.push(record);
-
-  // 4) Draw replacements for each used card
-  for (let i = 0; i < cast.length; i++) {
-    if (cast[i] > -1) {
-      if (player.deck.length > 0) {
-        const drawPos   = Math.floor(Math.random() * player.deck.length);
-        const [newCard] = player.deck.splice(drawPos, 1);
-        player.hand[i]  = newCard;
-      } else {
-        // no more cards in deck → clear that slot
-        player.hand[i] = -1;
+    // 0.75) Verify cast matches hand
+    if (cast.length !== player.hand.length) {
+      return res.status(400).json({ error: `Cast length must be ${player.hand.length}` });
+    }
+    for (let i = 0; i < cast.length; i++) {
+      if (cast[i] > -1 && cast[i] !== player.hand[i]) {
+        return res
+          .status(400)
+          .json({ error: `Slot ${i} must be ${player.hand[i]}, got ${cast[i]}` });
       }
     }
+
+    // 1) Prevent duplicate pending casts
+    if (playerCasts.some(c => c.googleSub === googleSub)) {
+      return res.status(400).json({ error: 'You already have a pending cast.' });
+    }
+
+    // 2) Prevent new cast if unclaimed still exist
+    if (unclaimedCatches.some(c => c.googleSub === googleSub)) {
+      return res.status(400).json({ error: 'Claim your previous catch first.' });
+    }
+
+    // 3) Queue the cast
+    const bonuses = getBonusesFromCast(cast);
+    const record = {
+      googleSub,
+      cast,
+      depth: pickDepth(),
+      bonuses,
+      timestamp: new Date().toISOString(),
+    };
+    playerCasts.push(record);
+
+    // 4) Draw replacements for each used card
+    const updatedHand = [...player.hand];
+    const updatedDeck = [...player.deck];
+    
+    for (let i = 0; i < cast.length; i++) {
+      if (cast[i] > -1) {
+        if (updatedDeck.length > 0) {
+          const drawPos   = Math.floor(Math.random() * updatedDeck.length);
+          const [newCard] = updatedDeck.splice(drawPos, 1);
+          updatedHand[i]  = newCard;
+        } else {
+          // no more cards in deck → clear that slot
+          updatedHand[i] = -1;
+        }
+      }
+    }
+
+    // 5) Update player state in database
+    await PlayerService.updatePlayer(googleSub, {
+      hand: updatedHand,
+      deck: updatedDeck,
+      deck_count: updatedDeck.length,
+      state: 2
+    });
+
+    return res.json({
+      success:   true,
+      newHand:   updatedHand,
+      deckCount: updatedDeck.length
+    });
+  } catch (error) {
+    console.error('Error in playercast:', error);
+    return res.status(500).json({ error: 'Failed to process cast' });
   }
-  // update deckCount
-  player.deckCount = player.deck.length;
-
-  // 5) Flip state → 2, persist, etc.
-  player.state = 2;
-  await db.write();
-
-  return res.json({
-    success:   true,
-    newHand:   player.hand,
-    deckCount: player.deckCount
-  });
 });
 
 
 app.post('/claim', async (req, res) => {
-  const { playerId } = req.body;
-  if (!playerId) {
-    return res.status(400).json({ error: 'playerId required' });
+  const { googleSub } = req.body;
+  if (!googleSub) {
+    return res.status(400).json({ error: 'googleSub required' });
   }
 
-  // find and remove from in-memory unclaimedCatches
-  const idx = unclaimedCatches.findIndex(c => c.playerId === playerId);
-  if (idx < 0) {
-    return res.status(404).json({ error: 'No unclaimed catch' });
-  }
-  const [claimed] = unclaimedCatches.splice(idx, 1);
+  try {
+    // find and remove from in-memory unclaimedCatches
+    const idx = unclaimedCatches.findIndex(c => c.googleSub === googleSub);
+    if (idx < 0) {
+      return res.status(404).json({ error: 'No unclaimed catch' });
+    }
+    const [claimed] = unclaimedCatches.splice(idx, 1);
 
-  // update player record: reset state → 1 and remove the saved catch
-  await db.read();
-  const player = db.data.players[playerId];
-  if (player) {
-    player.state = 1;
-    delete player.catch;
-    await db.write();
-  }
+    // update player record: reset state → 1 and remove the saved catch
+    await PlayerService.updatePlayer(googleSub, {
+      state: 1,
+      catch: null
+    });
 
-  return res.json({ success: true, claimed });
+    return res.json({ success: true, claimed });
+  } catch (error) {
+    console.error('Error claiming catch:', error);
+    return res.status(500).json({ error: 'Failed to claim catch' });
+  }
 });
 
 
@@ -841,7 +850,8 @@ async function gameLoop() {
 
     // assemble the catch record
     const catchRecord = {
-      playerId: rec.playerId,
+      googleSub: rec.googleSub,
+      playerId: rec.googleSub, // Keep for backward compatibility
       cast:      rec.cast,
       depth:     winner.stats.depths,
       catch:     { type: winner.type, stats: winner.stats },
@@ -872,19 +882,21 @@ async function gameLoop() {
 
     await recordCatchHistory(catchRecord);
 
-      // mark player as "has a catch to claim"
-      await db.read();
-      if (db.data.players[rec.playerId]) {
-        db.data.players[rec.playerId].state = 3;
-        db.data.players[rec.playerId].catch = {
+    // mark player as "has a catch to claim"
+    try {
+      await PlayerService.updatePlayer(rec.googleSub, {
+        state: 3,
+        catch: {
           type:   catchRecord.catch.type,
           at:     catchRecord.at,
           weight: catchRecord.weight,
           length: catchRecord.length,
           minted: false
-        }; // Cache catch
-        await db.write();
-      }
+        }
+      });
+    } catch (error) {
+      console.error('Error updating player state after catch:', error);
+    }
   }
 
   // 6) only *now* update lastEvent for the next loop
@@ -904,28 +916,29 @@ async function gameLoop() {
    if (currentHour === 0) {
     // console.log("🌑 It's dawn—resetting all player decks and hands");
     await cardsDb.read();
-    await db.read();
 
-    for (const playerId of Object.keys(db.data.players)) {
-      const player = db.data.players[playerId];
-
+    try {
+      const players = await PlayerService.getAllPlayers();
+      
+          for (const player of players) {
       // brand-new deck of 20
-      const newDeck = await generateRandomDeck(20);
-      player.deck      = newDeck;
-      player.deckCount = newDeck.length;
-
+      const newDeck = await PlayerService.generateRandomDeck(20);
       // brand-new hand of 3
-      const newHand = await generateRandomDeck(3);
-      player.hand = newHand;
+      const newHand = await PlayerService.generateRandomDeck(3);
 
-      // // reset their activeHand slots
-      // player.activeHand = [-1, -1, -1];
-
-      // // optionally reset state back to "can cast" (1)
-      // player.state = 1;
+              await PlayerService.updatePlayer(player.google_sub, {
+          deck: newDeck,
+          deck_count: newDeck.length,
+          hand: newHand
+          // // reset their active_hand slots
+          // active_hand: [-1, -1, -1],
+          // // optionally reset state back to "can cast" (1)
+          // state: 1
+        });
     }
-
-    await db.write();
+    } catch (error) {
+      console.error('Error resetting player decks:', error);
+    }
   }
 
   // console.log(`✅ gameLoop complete\n--------------------------------\n`);
@@ -1212,14 +1225,13 @@ app.get('/fish-catches/:playerId', (req, res) => {
 app.post('/auto-catch-all', async (_req, res) => {
   try {
     // 1) load players & fish index
-    await db.read();
     await fishDb.read();
-    const players = Object.keys(db.data.players);
+    const players = await PlayerService.getAllPlayers();
     const fishMap = fishDb.data.fish;
 
     const newCatches = [];
 
-    for (const playerId of players) {
+    for (const player of players) {
       // pick random non-junk
       const entries = Object.entries(fishMap)
         .filter(([, stats]) => stats['base-image'] && stats.rarity !== 'junk');
@@ -1230,7 +1242,7 @@ app.post('/auto-catch-all', async (_req, res) => {
       const { weight, length } = rollFishMetrics(stats);
 
       const catchRecord = {
-        playerId,
+        googleSub: player.google_sub,
         catch: { type, stats },
         at:     new Date().toISOString(),
         weight,
@@ -1240,22 +1252,21 @@ app.post('/auto-catch-all', async (_req, res) => {
 
       // record in memory & history
       fishCatchesData.push({
-        playerId, type, at: catchRecord.at, weight, length
+        playerId: player.google_sub, type, at: catchRecord.at, weight, length
       });
       unclaimedCatches.push(catchRecord);
       await recordCatchHistory(catchRecord);
 
       // mark player as "has an unclaimed catch"
-      db.data.players[playerId].state = 3;
-      db.data.players[playerId].catch = {
-        type, at: catchRecord.at, weight, length
-      };
+      await PlayerService.updatePlayer(player.google_sub, {
+        state: 3,
+        catch: {
+          type, at: catchRecord.at, weight, length
+        }
+      });
 
       newCatches.push(catchRecord);
     }
-
-    // persist player state updates
-    await db.write();
 
     res.json({ success: true, newCatches });
   } catch (err) {
@@ -1297,21 +1308,23 @@ const completedMints = []; // Track completed mints with their NFT hashes
 
 app.post('/mint-caught-fish', async (req, res) => {
   console.log('=== /mint-caught-fish called with', req.body);
-  const { playerId, index } = req.body;
+  const { googleSub, index } = req.body;
 
-  if (typeof playerId !== 'string' || typeof index !== 'number') {
+  if (typeof googleSub !== 'string' || typeof index !== 'number') {
     return res.status(400).json({
-      error: 'playerId (string) and index (number) required'
+      error: 'googleSub (string) and index (number) required'
     });
   }
 
-  if (mintLocks.has(playerId)) {
+  if (mintLocks.has(googleSub)) {
     return res.status(429).json({ error: 'Mint in progress, please wait.' });
   }
 
-  const playerCatches = fishCatchesData.filter(c => c.playerId === playerId);
+  mintLocks.add(googleSub);
+
+  const playerCatches = fishCatchesData.filter(c => c.playerId === googleSub);
   if (playerCatches.length === 0) {
-    return res.status(404).json({ error: `No catches found for player ${playerId}` });
+    return res.status(404).json({ error: `No catches found for player ${googleSub}` });
   }
   if (index < 0 || index >= playerCatches.length) {
     return res.status(400).json({ error: `Index out of range (0–${playerCatches.length - 1})` });
@@ -1367,7 +1380,7 @@ app.post('/mint-caught-fish', async (req, res) => {
     console.log(`⏳ queued for minting: uploadId=${uploadId}`);
 
     mintQueue.push({
-      playerId,
+      googleSub,
       index,
       fishType: record.type,
       uploadId,
@@ -1381,7 +1394,7 @@ app.post('/mint-caught-fish', async (req, res) => {
     console.error('mint-caught-fish error', err);
     return res.status(500).json({ error: err.message });
   } finally {
-    mintLocks.delete(playerId);
+    mintLocks.delete(googleSub);
   }
 });
 
@@ -1396,14 +1409,14 @@ setInterval(async () => {
       const info = await fResp.json();
       if (info.blobId && info.blobId !== 'unknown') {
         const url = `https://walrus.tusky.io/${info.blobId}`;
-        const result = await mintNFTTo(item.playerId, {
+        const result = await mintNFTTo(item.googleSub, {
           name: item.fishType,
           description: item.description,
           imageUrl: url,
           thumbnailUrl: url
         });
         console.log('🧾 Full mintNFTTo result:', JSON.stringify(result, null, 2));
-        console.log(`✅ Minted NFT for ${item.playerId}: ${result.digest}`);
+        console.log(`✅ Minted NFT for ${item.googleSub}: ${result.digest}`);
 
         // Fetch transaction effects to get the created objectId
         let nftObjectId = null;
@@ -1411,6 +1424,7 @@ setInterval(async () => {
         const delayMs = 2000;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           try {
+            console.log(`🔍 Fetching transaction ${result.digest} (attempt ${attempt}/${maxAttempts})...`);
             const effects = await client.getTransactionBlock({ 
               digest: result.digest,
               options: {
@@ -1420,15 +1434,28 @@ setInterval(async () => {
                 showEvents: false
               }
             });
-            console.log('🧾 Transaction effects:', JSON.stringify(effects, null, 2));
-            if (effects.objectChanges) {
+            console.log('🧾 Full transaction response:', JSON.stringify(effects, null, 2));
+            
+            // Check if we have objectChanges
+            if (effects.objectChanges && effects.objectChanges.length > 0) {
+              console.log(`📦 Found ${effects.objectChanges.length} object changes:`);
+              effects.objectChanges.forEach((change, index) => {
+                console.log(`  ${index + 1}. Type: ${change.type}, ObjectId: ${change.objectId || 'N/A'}`);
+              });
+              
+              // Look for created objects (NFTs)
               const createdObject = effects.objectChanges.find(change => change.type === 'created');
               if (createdObject) {
                 nftObjectId = createdObject.objectId;
-                console.log(`🎯 NFT Object ID: ${nftObjectId}`);
+                console.log(`🎯 Found NFT Object ID: ${nftObjectId}`);
                 break;
+              } else {
+                console.log('⚠️ No "created" object found in objectChanges');
               }
+            } else {
+              console.log('⚠️ No objectChanges found in transaction response');
             }
+            
             // If we got here, no object yet, but transaction exists
             break;
           } catch (e) {
@@ -1444,7 +1471,7 @@ setInterval(async () => {
         // Store the completed mint with both transaction hash and object ID
         completedMints.push({
           uploadId: item.uploadId,
-          playerId: item.playerId,
+          googleSub: item.googleSub,
           index: item.index,
           nftHash: result.digest,
           nftObjectId: nftObjectId,
@@ -1452,11 +1479,11 @@ setInterval(async () => {
         });
 
         // Find all catches for this player and mark the specific one as minted
-        const playerCatches = fishCatchesData.filter(c => c.playerId === item.playerId);
+        const playerCatches = fishCatchesData.filter(c => c.playerId === item.googleSub);
         if (item.index >= 0 && item.index < playerCatches.length) {
           // Find the actual index in the main fishCatchesData array
           const actualIndex = fishCatchesData.findIndex(c => 
-            c.playerId === item.playerId && 
+            c.playerId === item.googleSub && 
             c.type === playerCatches[item.index].type &&
             c.at === playerCatches[item.index].at
           );
@@ -1476,7 +1503,7 @@ setInterval(async () => {
 app.get('/mint-queue', (req, res) => {
   
   const queueInfo = mintQueue.map(item => ({
-    playerId: item.playerId,
+    googleSub: item.googleSub,
     fishType: item.fishType,
     uploadId: item.uploadId,
     createdAt: item.createdAt,
