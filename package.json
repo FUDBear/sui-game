@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@mysten/sui": "^1.29.0",
+    "@mysten/zklogin": "^0.8.1",
     "@suiet/wallet-kit": "^0.3.7",
     "@supabase/supabase-js": "^2.52.1",
     "canvas": "^3.1.0",

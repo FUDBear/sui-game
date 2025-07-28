@@ -364,7 +364,7 @@ app.get('/balance', async (_, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`Testnet address: ${address}`);
+  console.log(`SUI Server address: ${address}`);
 });
 
 app.get('/', (_, res) => {
@@ -1524,7 +1524,7 @@ app.get('/mint-queue', (req, res) => {
 app.post('/mint-queue/cancel', (req, res) => {
   try {
     const previousLength = mintQueue.length;
-    mintQueue.length = 0;
+  mintQueue.length = 0;
     console.log(`🗑️ Mint queue cleared: ${previousLength} items removed`);
     res.json({ 
       success: true, 

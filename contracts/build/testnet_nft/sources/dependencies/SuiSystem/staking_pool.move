@@ -27,7 +27,7 @@ const EDeactivationOfInactivePool: u64 = 11;
 const EIncompatibleStakedSui: u64 = 12;
 const EWithdrawalInSameEpoch: u64 = 13;
 const EPoolAlreadyActive: u64 = 14;
-const EPoolNotPreactive: u64 = 15;
+const EPoolPreactiveOrInactive: u64 = 15;
 const EActivationOfInactivePool: u64 = 16;
 const EDelegationOfZeroSui: u64 = 17;
 const EStakedSuiBelowThreshold: u64 = 18;
@@ -155,11 +155,12 @@ public(package) fun request_withdraw_stake(
     staked_sui: StakedSui,
     ctx: &TxContext,
 ): Balance<SUI> {
-    // stake is inactive
-    if (staked_sui.stake_activation_epoch > ctx.epoch()) {
+    // stake is inactive and the pool is not preactive - allow direct withdraw
+    // the reason why we exclude preactive pools is to avoid potential underflow
+    // on subtraction, and we need to enforce `pending_stake_withdraw` call.
+    if (staked_sui.stake_activation_epoch > ctx.epoch() && !pool.is_preactive()) {
         let principal = staked_sui.into_balance();
         pool.pending_stake = pool.pending_stake - principal.value();
-
         return principal
     };
 
@@ -179,8 +180,8 @@ public(package) fun request_withdraw_stake(
     pool.pending_pool_token_withdraw =
         pool.pending_pool_token_withdraw + pool_token_withdraw_amount;
 
-    // If the pool is inactive, we immediately process the withdrawal.
-    if (pool.is_inactive()) pool.process_pending_stake_withdraw();
+    // If the pool is inactive or preactive, we immediately process the withdrawal.
+    if (pool.is_inactive() || pool.is_preactive()) pool.process_pending_stake_withdraw();
 
     // TODO: implement withdraw bonding period here.
     principal_withdraw.join(rewards_withdraw);
@@ -275,6 +276,7 @@ public(package) fun convert_to_fungible_staked_sui(
 
     assert!(pool_id == object::id(pool), EWrongPool);
     assert!(ctx.epoch() >= stake_activation_epoch, ECannotMintFungibleStakedSuiYet);
+    assert!(!pool.is_preactive() && !pool.is_inactive(), EPoolPreactiveOrInactive);
 
     id.delete();
 
@@ -328,7 +330,7 @@ public(package) fun withdraw_from_principal(
 }
 
 /// Allows calling `.into_balance()` on `StakedSui` to invoke `unwrap_staked_sui`
-public use fun unwrap_staked_sui as StakedSui.into_balance;
+use fun unwrap_staked_sui as StakedSui.into_balance;
 
 fun unwrap_staked_sui(staked_sui: StakedSui): Balance<SUI> {
     let StakedSui { id, principal, .. } = staked_sui;
@@ -447,8 +449,12 @@ public fun fungible_staked_sui_pool_id(fungible_staked_sui: &FungibleStakedSui):
 /// Allows calling `.amount()` on `StakedSui` to invoke `staked_sui_amount`
 public use fun staked_sui_amount as StakedSui.amount;
 
+/// Returns the principal amount of `StakedSui`.
 public fun staked_sui_amount(staked_sui: &StakedSui): u64 { staked_sui.principal.value() }
 
+public use fun stake_activation_epoch as StakedSui.activation_epoch;
+
+/// Returns the activation epoch of `StakedSui`.
 public fun stake_activation_epoch(staked_sui: &StakedSui): u64 {
     staked_sui.stake_activation_epoch
 }
@@ -456,6 +462,13 @@ public fun stake_activation_epoch(staked_sui: &StakedSui): u64 {
 /// Returns true if the input staking pool is preactive.
 public fun is_preactive(pool: &StakingPool): bool {
     pool.activation_epoch.is_none()
+}
+
+/// Returns the activation epoch of the `StakingPool`. For validator candidates,
+/// or pending validators, the value returned is `None`. For active validators,
+/// the value is the epoch before the validator was activated.
+public(package) fun activation_epoch(pool: &StakingPool): Option<u64> {
+    pool.activation_epoch
 }
 
 /// Returns true if the input staking pool is inactive.
@@ -525,6 +538,9 @@ public entry fun split_staked_sui(stake: &mut StakedSui, split_amount: u64, ctx:
     transfer::transfer(stake.split(split_amount, ctx), ctx.sender());
 }
 
+/// Allows calling `.join()` on `StakedSui` to invoke `join_staked_sui`
+public use fun join_staked_sui as StakedSui.join;
+
 /// Consume the staked sui `other` and add its value to `self`.
 /// Aborts if some of the staking parameters are incompatible (pool id, stake activation epoch, etc.)
 public entry fun join_staked_sui(self: &mut StakedSui, other: StakedSui) {
@@ -534,9 +550,6 @@ public entry fun join_staked_sui(self: &mut StakedSui, other: StakedSui) {
     id.delete();
     self.principal.join(principal);
 }
-
-/// Allows calling `.join()` on `StakedSui` to invoke `join_staked_sui`
-public use fun join_staked_sui as StakedSui.join;
 
 /// Returns true if all the staking parameters of the staked sui except the principal are identical
 public fun is_equal_staking_metadata(self: &StakedSui, other: &StakedSui): bool {
